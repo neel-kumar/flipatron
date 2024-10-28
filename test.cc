@@ -8,7 +8,7 @@ using namespace std;
 int main(int argc, char** argv)
 {
 	// Read the image file as
-	Mat image = imread("ferrari.jpg"); // , IMREAD_GRAYSCALE);
+	Mat image = imread("data/ferrari.jpg"); // , IMREAD_GRAYSCALE);
 	Mat resized_down, blur3x3;
 	resize(image, resized_down, Size(300, 200), INTER_LINEAR);
 	GaussianBlur(resized_down, blur3x3, Size(3, 3), 0);
