@@ -14,7 +14,7 @@ using namespace cv;
 This functions opens a video file and extracts the frames and put them into a vector of Mat(its the class for representing an img)
 */
 void extract_frames(const string &videoFilePath,vector<Mat>& frames){
-	
+
 	try{
 		//open the video file
   	VideoCapture cap(videoFilePath); // open the video file
@@ -22,7 +22,7 @@ void extract_frames(const string &videoFilePath,vector<Mat>& frames){
   		CV_Error(Error::StsError, "Can not open Video file");
       std::cout << "Error opening video file" << endl;
     }
-	
+
   	//cap.get(CV_CAP_PROP_FRAME_COUNT) contains the number of frames in the video;
   	for(int frameNum = 0; frameNum < cap.get(CAP_PROP_FRAME_COUNT); frameNum++)
   	{
@@ -35,7 +35,7 @@ void extract_frames(const string &videoFilePath,vector<Mat>& frames){
     cerr << e.msg << endl;
     exit(1);
   }
-	
+
 }
 
 /*
@@ -47,14 +47,14 @@ void save_frames(vector<Mat>& frames, const string& outputDir){
 	compression_params.push_back(100);
 
   long long frameNumber = 0;
-  
-	for(std::vector<Mat>::iterator frame = frames.begin(); frame != frames.end(); ++frame){
+
+	for(std::vector<Mat>::iterator frame = frames.begin(); frame != frames.end(); ++frame, ++frameNumber) {
 	  string filePath = outputDir + to_string(static_cast<long long>(frameNumber))+ ".jpg";
           cout << "Storing " << frameNumber << " th frame to file: " << filePath << endl;
 	  imwrite(filePath,*frame,compression_params);
 	}
-	
-	
+
+
 }
 
 signed main(int argc, char** argv)
