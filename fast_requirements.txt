@@ -4,4 +4,4 @@ torchsummary==1.5.1
 torchvision @ https://download.pytorch.org/whl/cu124/torchvision-0.21.0%2Bcu124-cp311-cp311-linux_x86_64.whl#sha256=137376805aca5ba57bd2c7a3ecb8569df961dbe82b128aac9b3b0a7125ef9385
 numpy==2.0.2
 opencv-python==4.11.0.86
-
+ultralytics==8.3.107
