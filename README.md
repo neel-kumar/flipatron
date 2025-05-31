@@ -5,3 +5,13 @@ Allows you to scan pages and books using just a video of you flipping through th
 use make build
 
 PKGBUILD - https://stackoverflow.com/questions/15320267/package-opencv-was-not-found-in-the-pkg-config-search-path
+
+## SAM model
+To use any of the files or notebooks utilizing the slower Meta SAM model, install from requirements.txt
+
+pip install -r requirements.txt
+
+## FastSAM model
+To use any of the files or notebooks utilizing the FastSAM model, install from fast_requirements.txt
+
+pip install -r fast_requirements.txt
