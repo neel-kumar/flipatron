@@ -8,6 +8,7 @@ PKGBUILD - https://stackoverflow.com/questions/15320267/package-opencv-was-not-f
 ## SAM model
 To use any of the files or notebooks utilizing the slower Meta SAM model, install from requirements.txt
 ```console
+conda activate <env-name>
 pip install -r requirements.txt
 ```
 
@@ -15,6 +16,7 @@ pip install -r requirements.txt
 To use any of the files or notebooks utilizing the FastSAM model, install from fast_requirements.txt
 
 ```console
+conda activate <env-name>
 pip install -r fast_requirements.txt
 ```
 
