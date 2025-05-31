@@ -3,23 +3,34 @@ print("Scanning", video_file, "...")
 is_notebook = input("Is video a notebook? y(es) or n(o): ")
 is_notebook = (is_notebook == "y" or is_notebook == "yes")
 
+# Add FPS input
+fps = int(input("Frames per second to extract (default 5): ") or 5)
+print(f"Extracting frames at {fps} fps...")
+
+import time
+fst = time.time()
+
+stt = time.time()
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
 import cv2
 import sys
 import torch
-import time
 import os
 from PIL import Image
 
 from ultralytics import FastSAM
 model = FastSAM('FastSAM-x.pt') # FastSAM.pt or FastSAM-s.pt(smaller & less accurate)
 
+print("Imports took: ", time.time()-stt, "seconds")
+
 # extract frames
 # Video file to process
 
 #video_file = "./data/chem.mp4"
+
+stt = time.time()
 output_dir = "./trash"
 os.makedirs(output_dir, exist_ok=True)
 
@@ -30,26 +41,33 @@ os.makedirs(output_dir, exist_ok=True)
 for d in ["frames"]:
     os.makedirs(output_dir + "/" + d, exist_ok=True)
 
-def video_to_frames(video_file):
+def video_to_frames(video_file, fps=1):
     vidcap = cv2.VideoCapture(video_file)
-
     frames = []
-
+    video_fps = vidcap.get(cv2.CAP_PROP_FPS)
+    print(f"Video FPS: {video_fps}")
+    if video_fps <= 0:
+        video_fps = 30  # fallback if FPS not detected
+    frame_interval = int(round(video_fps / fps))
+    count = 0
     while True:
         success, image = vidcap.read()
-        if success:
-            frames.append(image)
-        else:
+        if not success:
             break
-
+        if count % frame_interval == 0:
+            frames.append(image)
+        count += 1
+    vidcap.release()
     return frames
 
 def save_images(images, output_dir):
     for i, f in enumerate(images):
         cv2.imwrite(f"{output_dir}/{i:05d}.jpg", f)
 
-frames = video_to_frames(video_file)
-save_images(frames, output_dir + "/frames")
+frames = video_to_frames(video_file, fps)
+# save_images(frames, output_dir + "/frames")
+
+print("Extracting frames took: ", time.time()-stt, "seconds")
 
 
 # In[18]:
@@ -282,13 +300,14 @@ print("Finding valid pages took: ", time.time()-stt, "seconds")
 print("Final Frames:", ff)
 
 
-os.makedirs(output_dir+'/result', exist_ok=True)
-for pgi in ff:
-    fin_pg[pgi] = sorted(fin_pg[pgi], key=lambda x:x['bbox'][0])
-    for i in range(0,len(fin_pg[pgi])):
-        bbox = fin_pg[pgi][i]['bbox']
-        im = Image.fromarray(frames[pgi][bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]])
-        im.save(output_dir + "/result/pg" + str(pgi) + "frame" + str(ff[i]) + "mask" + str(i) + ".jpg")
+def save_pages_to_jpg(frames, fin_pg, ff, output_dir):
+    os.makedirs(output_dir+'/result', exist_ok=True)
+    for pgi in ff:
+        fin_pg[pgi] = sorted(fin_pg[pgi], key=lambda x:x['bbox'][0])
+        for i in range(0,len(fin_pg[pgi])):
+            bbox = fin_pg[pgi][i]['bbox']
+            im = Image.fromarray(frames[pgi][bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]])
+            im.save(output_dir + "/result/pg" + str(pgi) + "frame" + str(ff[i]) + "mask" + str(i) + ".jpg")
 
 def convert_jpg_to_pdf(image_folder, output_pdf):
     image_files = [f for f in os.listdir(image_folder) if f.lower().endswith(('.jpg', '.jpeg'))]
@@ -303,6 +322,29 @@ def convert_jpg_to_pdf(image_folder, output_pdf):
     images[0].save(output_pdf, save_all=True, append_images=images[1:])
     print(f"Successfully created PDF: {output_pdf}")
 
-image_folder = output_dir + "/result"
+# New function: Directly convert selected frames to PDF without saving as JPG
+
+def frames_to_pdf(frames, fin_pg, ff, output_pdf):
+    pdf_images = []
+    for pgi in ff:
+        fin_pg[pgi] = sorted(fin_pg[pgi], key=lambda x:x['bbox'][0])
+        for i in range(len(fin_pg[pgi])):
+            bbox = fin_pg[pgi][i]['bbox']
+            cropped = frames[pgi][bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]]
+            im = Image.fromarray(cropped)
+            pdf_images.append(im.convert('RGB'))
+    if pdf_images:
+        pdf_images[0].save(output_pdf, save_all=True, append_images=pdf_images[1:])
+        print(f"Successfully created PDF: {output_pdf}")
+    else:
+        print("No images to save as PDF.")
+
+
+# image_folder = output_dir + "/result"
+# output_pdf = "output.pdf"
+# convert_jpg_to_pdf(image_folder, output_pdf)
+
 output_pdf = "output.pdf"
-convert_jpg_to_pdf(image_folder, output_pdf)
+frames_to_pdf(frames, fin_pg, ff, output_pdf)
+
+print("Total time taken: ", time.time()-fst, "seconds")
