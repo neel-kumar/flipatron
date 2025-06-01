@@ -34,3 +34,7 @@
 # NK
 trash/
 data/ext/
+*.tflite
+*.pt
+*.onnx
+
