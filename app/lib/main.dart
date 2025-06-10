@@ -1,15 +1,13 @@
 import 'dart:io';
-import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:image/image.dart' as img;
 
 import 'maskinator.dart';
+import 'scannerUtils.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,17 +25,11 @@ class _MyAppState extends State<MyApp> {
   File? _videoFile;
   bool _extracting = false;
   String _log = '';
-  final TextEditingController _frameRateController = TextEditingController(
-    text: '1',
-  );
+  final TextEditingController _frameRateController = TextEditingController(text: '1');
   double _frameRate = 1.0;
 
   // Store history of extractions: each entry is {log, frames}
-  final Map<String, dynamic> _devLog = {
-    'log': '',
-    'frames': [],
-    'framesWithMasks': [],
-  };
+  final Map<String, dynamic> _devLog = {'log': '', 'frames': [], 'framesWithMasks': []};
 
   void _appendLog(String msg) {
     setState(() {
@@ -53,18 +45,14 @@ class _MyAppState extends State<MyApp> {
       File videoFile = File(picked.path);
       if (source == ImageSource.camera) {
         final tempDir = await getTemporaryDirectory();
-        final rotatedPath =
-            '${tempDir.path}/rotated_${DateTime.now().millisecondsSinceEpoch}.mp4';
+        final rotatedPath = '${tempDir.path}/rotated_${DateTime.now().millisecondsSinceEpoch}.mp4';
         // Use ffmpeg to rotate the video to horizontal (landscape)
         // This rotates 90 degrees clockwise if the video is portrait
         // and does nothing if already landscape
         // The transpose=1 filter rotates 90 degrees clockwise
         // The select filter only applies if height > width
-        final probeCmd =
-            '-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${videoFile.path}"';
-        final probeResult = await FFmpegKit.executeWithArguments(
-          probeCmd.split(' '),
-        );
+        final probeCmd = '-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${videoFile.path}"';
+        final probeResult = await FFmpegKit.executeWithArguments(probeCmd.split(' '));
         final probeOutput = await probeResult.getOutput();
         int width = 0, height = 0;
         if (probeOutput != null && probeOutput.contains('x')) {
@@ -76,8 +64,7 @@ class _MyAppState extends State<MyApp> {
         }
         if (height > width) {
           // Portrait, rotate to landscape
-          final rotateCmd =
-              '-i "${videoFile.path}" -vf "transpose=1" -c:a copy "$rotatedPath" -y';
+          final rotateCmd = '-i "${videoFile.path}" -vf "transpose=1" -c:a copy "$rotatedPath" -y';
           await FFmpegKit.execute(rotateCmd);
           videoFile = File(rotatedPath);
         }
@@ -104,9 +91,7 @@ class _MyAppState extends State<MyApp> {
 
     Maskinator fastSam = Maskinator();
     //await fastSam.init();
-    List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(
-      frames,
-    ); // mask data, mask, area, xyxy for each frame
+    List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames); // mask data, mask, area, xyxy for each frame
 
     stopwatch.stop();
 
@@ -117,7 +102,18 @@ class _MyAppState extends State<MyApp> {
     }
     log += 'Total inference time: ${stopwatch.elapsedMilliseconds} ms\n';
 
-    List<img.Image> framesWithMasks = displayFramesWithMasks(frames, modelOut);
+    List<Map<String, dynamic>> filteredOut = ScannerUtils().filterByArea(modelOut, 0.10, 0.50, 0.10);
+
+    for (var i = 0; i < filteredOut.length; i++) {
+      log += 'Frame ${i + 1}: ${filteredOut[i]['ann'].length} pages found\n';
+      for (var j = 0; j < filteredOut[i]['ann'].length; j++) {
+        print(
+          "x1: ${filteredOut[i]['ann'][j]['xyxy'][0]}, y1: ${filteredOut[i]['ann'][j]['xyxy'][1]}, x2: ${filteredOut[i]['ann'][j]['xyxy'][2]}, y2: ${filteredOut[i]['ann'][j]['xyxy'][3]}",
+        );
+      }
+    }
+
+    List<img.Image> framesWithMasks = displayFramesWithMasks(frames, filteredOut);
 
     setState(() {
       _log = log;
@@ -127,11 +123,9 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  List<img.Image> displayFramesWithMasks(
-    List<File> frames,
-    List<Map<String, dynamic>> modelOut,
-  ) {
+  List<img.Image> displayFramesWithMasks(List<File> frames, List<Map<String, dynamic>> modelOut) {
     List<img.Image> images = [];
+
     for (var i = 0; i < frames.length; i++) {
       var f = frames[i];
       final bytes = f.readAsBytesSync();
@@ -139,17 +133,10 @@ class _MyAppState extends State<MyApp> {
       if (decoded == null) throw FormatException('Decoded image is null');
       final resized = img.copyResize(decoded, width: 640, height: 640);
 
-      for (var data in modelOut[i]['ann']) {
+      for (var j = 0; j < modelOut[i]['ann'].length; j++) {
+        var data = modelOut[i]['ann'][j];
         final xyxy = data['xyxy'] as List<int>;
-        img.drawRect(
-          resized,
-          x1: xyxy[0],
-          y1: xyxy[1],
-          x2: xyxy[2],
-          y2: xyxy[3],
-          color: img.ColorRgb8(255, 0, 0),
-          thickness: 2,
-        );
+        img.drawRect(resized, x1: xyxy[0], y1: xyxy[1], x2: xyxy[2], y2: xyxy[3], color: img.ColorRgb8(255, 0, 0), thickness: 2);
       }
 
       images.add(resized);
@@ -170,26 +157,16 @@ class _MyAppState extends State<MyApp> {
       } catch (_) {}
     }
     framesDir.createSync();
-    final videoBase = _videoFile!.path
-        .split(Platform.pathSeparator)
-        .last
-        .split('.')
-        .first;
+    final videoBase = _videoFile!.path.split(Platform.pathSeparator).last.split('.').first;
     final outPattern = '${framesDir.path}/' + videoBase + '_%05d.jpg';
     final cmd = '-i "${_videoFile!.path}" -vf fps=$_frameRate "$outPattern"';
     await FFmpegKit.execute(cmd);
-    final RegExp framePattern = RegExp(
-      '^' + RegExp.escape(videoBase) + r'_\d{5}\.jpg',
-    );
+    final RegExp framePattern = RegExp('^' + RegExp.escape(videoBase) + r'_\d{5}\.jpg');
     final files =
         framesDir
             .listSync()
             .whereType<File>()
-            .where(
-              (f) => framePattern.hasMatch(
-                f.path.split(Platform.pathSeparator).last,
-              ),
-            )
+            .where((f) => framePattern.hasMatch(f.path.split(Platform.pathSeparator).last))
             .toList()
           ..sort((a, b) => a.path.compareTo(b.path));
     setState(() {
@@ -206,8 +183,7 @@ class _MyAppState extends State<MyApp> {
     final elapsedMs = stopwatch.elapsedMilliseconds;
     print('Extracting frames took $elapsedMs ms\n');
     setState(() {
-      _devLog['log'] =
-          '${_devLog['log']}Extracting frames took $elapsedMs ms\n';
+      _devLog['log'] = '${_devLog['log']}Extracting frames took $elapsedMs ms\n';
     });
 
     return files;
@@ -245,8 +221,7 @@ class _MyAppState extends State<MyApp> {
                             onChanged: (val) {
                               setState(() {
                                 _frameRate = val.roundToDouble();
-                                _frameRateController.text = _frameRate
-                                    .toString();
+                                _frameRateController.text = _frameRate.toString();
                               });
                             },
                             activeColor: Color(0xFF4F8CFF),
@@ -256,21 +231,11 @@ class _MyAppState extends State<MyApp> {
                         ),
                         const SizedBox(width: 10),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Color(0xFF1A2233),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(color: Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
                           child: Text(
                             _frameRate.round().toString(),
-                            style: const TextStyle(
-                              color: Color(0xFF4F8CFF),
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
+                            style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
                           ),
                         ),
                       ],
@@ -292,38 +257,24 @@ class _MyAppState extends State<MyApp> {
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: ElevatedButton.icon(
-                    icon: const Icon(
-                      Icons.scanner_rounded,
-                      size: 36,
-                      color: Colors.white,
-                    ),
+                    icon: const Icon(Icons.scanner_rounded, size: 36, color: Colors.white),
                     label: const Text(
                       'Select Video',
-                      style: TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+                      style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.transparent,
                       shadowColor: Colors.transparent,
                       foregroundColor: Colors.white,
                       elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(18),
-                      ),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                       padding: const EdgeInsets.symmetric(vertical: 16),
                     ),
                     onPressed: () async {
                       showModalBottomSheet(
                         context: context,
                         backgroundColor: const Color(0xFF10131A),
-                        shape: const RoundedRectangleBorder(
-                          borderRadius: BorderRadius.vertical(
-                            top: Radius.circular(24),
-                          ),
-                        ),
+                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
                         builder: (context) {
                           return Padding(
                             padding: const EdgeInsets.all(24.0),
@@ -336,38 +287,21 @@ class _MyAppState extends State<MyApp> {
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(
                                       gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF4F8CFF),
-                                          Color(0xFF1A2233),
-                                        ],
+                                        colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
                                         begin: Alignment.centerLeft,
                                         end: Alignment.centerRight,
                                       ),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: ElevatedButton.icon(
-                                      icon: const Icon(
-                                        Icons.videocam_rounded,
-                                        size: 28,
-                                        color: Colors.white,
-                                      ),
-                                      label: const Text(
-                                        'Record Video',
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                      icon: const Icon(Icons.videocam_rounded, size: 28, color: Colors.white),
+                                      label: const Text('Record Video', style: TextStyle(fontSize: 22, color: Colors.white)),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.transparent,
                                         shadowColor: Colors.transparent,
                                         foregroundColor: Colors.white,
                                         elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                        ),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                       ),
                                       onPressed: () {
                                         Navigator.pop(context);
@@ -383,38 +317,21 @@ class _MyAppState extends State<MyApp> {
                                   child: DecoratedBox(
                                     decoration: BoxDecoration(
                                       gradient: const LinearGradient(
-                                        colors: [
-                                          Color(0xFF4F8CFF),
-                                          Color(0xFF1A2233),
-                                        ],
+                                        colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
                                         begin: Alignment.centerLeft,
                                         end: Alignment.centerRight,
                                       ),
                                       borderRadius: BorderRadius.circular(14),
                                     ),
                                     child: ElevatedButton.icon(
-                                      icon: const Icon(
-                                        Icons.video_file_rounded,
-                                        size: 28,
-                                        color: Colors.white,
-                                      ),
-                                      label: const Text(
-                                        'Pick from Gallery',
-                                        style: TextStyle(
-                                          fontSize: 22,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                      icon: const Icon(Icons.video_file_rounded, size: 28, color: Colors.white),
+                                      label: const Text('Pick from Gallery', style: TextStyle(fontSize: 22, color: Colors.white)),
                                       style: ElevatedButton.styleFrom(
                                         backgroundColor: Colors.transparent,
                                         shadowColor: Colors.transparent,
                                         foregroundColor: Colors.white,
                                         elevation: 0,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                        ),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                                       ),
                                       onPressed: () {
                                         Navigator.pop(context);
@@ -452,11 +369,7 @@ class _MyAppState extends State<MyApp> {
                               color: const Color(0xFF10131A),
                               borderRadius: BorderRadius.circular(18),
                               boxShadow: [
-                                BoxShadow(
-                                  color: Colors.blueGrey.withOpacity(0.08),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4),
-                                ),
+                                BoxShadow(color: Colors.blueGrey.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
                               ],
                             ),
                             child: Column(
@@ -464,41 +377,27 @@ class _MyAppState extends State<MyApp> {
                               children: [
                                 Text(
                                   _devLog['log'] as String,
-                                  style: const TextStyle(
-                                    fontFamily: 'monospace',
-                                    color: Color(0xFFB3C6FF),
-                                    fontSize: 16,
-                                  ),
+                                  style: const TextStyle(fontFamily: 'monospace', color: Color(0xFFB3C6FF), fontSize: 16),
                                 ),
                                 if ((_devLog['frames'] as List).isNotEmpty)
                                   Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
                                       const Text(
                                         "Original Frames:",
-                                        style: TextStyle(
-                                          color: Color(0xFFB3C6FF),
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                        style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
                                       ),
                                       SizedBox(
                                         height: 180,
                                         child: ListView.builder(
                                           scrollDirection: Axis.horizontal,
-                                          itemCount: (_devLog['frames'] as List)
-                                              .length,
+                                          itemCount: (_devLog['frames'] as List).length,
                                           itemBuilder: (context, fidx) {
-                                            final frames =
-                                                _devLog['frames'] as List<File>;
+                                            final frames = _devLog['frames'] as List<File>;
                                             return Padding(
-                                              padding: const EdgeInsets.all(
-                                                8.0,
-                                              ),
+                                              padding: const EdgeInsets.all(8.0),
                                               child: ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
+                                                borderRadius: BorderRadius.circular(6),
                                                 child: Image.file(frames[fidx]),
                                               ),
                                             );
@@ -506,22 +405,13 @@ class _MyAppState extends State<MyApp> {
                                         ),
                                       ),
                                       // Display frames with masks
-                                      if ((_devLog['framesWithMasks'] as List)
-                                          .isNotEmpty)
-                                        for (var i
-                                            in _devLog['framesWithMasks']
-                                                as List<img.Image>)
+                                      if ((_devLog['framesWithMasks'] as List).isNotEmpty)
+                                        for (var i in _devLog['framesWithMasks'] as List<img.Image>)
                                           Padding(
-                                            padding: const EdgeInsets.only(
-                                              bottom: 16.0,
-                                            ),
+                                            padding: const EdgeInsets.only(bottom: 16.0),
                                             child: ClipRRect(
-                                              borderRadius:
-                                                  BorderRadius.circular(16),
-                                              child: Image.memory(
-                                                img.encodeJpg(i),
-                                                fit: BoxFit.cover,
-                                              ),
+                                              borderRadius: BorderRadius.circular(16),
+                                              child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
                                             ),
                                           ),
                                     ],

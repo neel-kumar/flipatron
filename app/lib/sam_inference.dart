@@ -1,10 +1,9 @@
 import 'dart:io';
-import 'dart:ui';
 import 'dart:typed_data';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
-import 'package:path_provider/path_provider.dart';
 import 'package:tflite_flutter/tflite_flutter.dart';
 
 /// SamInference
@@ -26,12 +25,11 @@ class SamInference {
         _ => XNNPackDelegate(),
       };
 
-      InterpreterOptions options = InterpreterOptions()..addDelegate(delegate);
-      //  ..threads = 4;
+      InterpreterOptions options = InterpreterOptions()
+        ..addDelegate(delegate)
+        ..threads = 4;
 
-      _interpreter =
-          interpreter ??
-          await Interpreter.fromAsset(MODEL_FILE_NAME, options: options);
+      _interpreter = interpreter ?? await Interpreter.fromAsset(MODEL_FILE_NAME, options: options);
       print("Interpreter loaded successfully: $_interpreter");
 
       var outputTensors = _interpreter.getOutputTensors();
@@ -39,19 +37,13 @@ class SamInference {
       outputBuff = {
         0: List<List<List<double>>>.filled(
           1,
-          List<List<double>>.filled(
-            outputTensors[0].shape[1],
-            List<double>.filled(outputTensors[0].shape[2], 0),
-          ),
+          List<List<double>>.filled(outputTensors[0].shape[1], List<double>.filled(outputTensors[0].shape[2], 0)),
         ),
         1: List<List<List<List<double>>>>.filled(
           1,
           List<List<List<double>>>.filled(
             outputTensors[1].shape[1],
-            List<List<double>>.filled(
-              outputTensors[1].shape[2],
-              List<double>.filled(outputTensors[1].shape[3], 0),
-            ),
+            List<List<double>>.filled(outputTensors[1].shape[2], List<double>.filled(outputTensors[1].shape[3], 0)),
           ),
         ),
       };
@@ -88,15 +80,13 @@ class SamInference {
 
     final inputTensor = _filePreprocess(image);
 
-    var preProcessElapsedTime =
-        DateTime.now().millisecondsSinceEpoch - preProcessStart;
+    var preProcessElapsedTime = DateTime.now().millisecondsSinceEpoch - preProcessStart;
 
     var inferenceTimeStart = DateTime.now().millisecondsSinceEpoch;
 
     _interpreter.runForMultipleInputs(inputTensor, outputBuff);
 
-    var inferenceTimeElapsed =
-        DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
+    var inferenceTimeElapsed = DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
 
     var postStart = DateTime.now().millisecondsSinceEpoch;
 
@@ -106,15 +96,11 @@ class SamInference {
 
     return {
       "ann": ann,
-      "stats": {
-        "pre": preProcessElapsedTime,
-        "inf": inferenceTimeElapsed,
-        "post": postTime,
-      },
+      "stats": {"pre": preProcessElapsedTime, "inf": inferenceTimeElapsed, "post": postTime},
     };
   }
 
-  List<Map<String, dynamic>> _model2masks(var output, [double mnconf = 0.25]) {
+  List<Map<String, dynamic>> _model2masks(var output, [double mnconf = 0.70]) {
     // 0,3,1,2 - output[1]
     var protos = output[1]![0]; // 160,160,32
     int h = protos.length, w = protos[0].length, c = protos[0][0].length;
@@ -132,24 +118,21 @@ class SamInference {
 
     // transpose out0(37,8400) to (8400,37) and filter out where objectness/conf > mnconf, <- maybe add nms LATER DO IT
     // then seperate into masks(5:), xywh(:4)
-    List<List<double>> out0 =
-        output[0]![0]; // 37,8400 - x, y, width, height, objectness and 32 mask coefficiants
-    List<Float32List> out0Transpose = _transpose2dDouble(out0),
-        xywh = [],
-        maskCoeff = [];
-    for (var i = 0; i < out0Transpose.shape[0]; i++) {
+    List<List<double>> out0 = output[0]![0]; // 37,8400 - x, y, width, height, objectness and 32 mask coefficiants
+    List<Float32List> out0Transpose = _transpose2dDouble(out0), xywh = [], maskCoeff = [];
+    // Store confidence values for each detection
+    List<double> confidences = [];
+    for (var i = 0; i < out0Transpose.length; i++) {
       if (out0Transpose[i][4] > mnconf) {
         xywh.add(out0Transpose[i].sublist(0, 4));
         maskCoeff.add(out0Transpose[i].sublist(5));
+        confidences.add(out0Transpose[i][4]); // Store confidence score
       }
     }
     List<Float32List> xyxy = _wh2xy(xywh);
 
     // matrix multiply flatten protos with maskCoeff
-    List<Float32List> flat_masks = _dotProd2d(
-      maskCoeff,
-      flatProtos,
-    ); // n, 160*160
+    List<Float32List> flat_masks = _dotProd2d(maskCoeff, flatProtos); // n, 160*160
 
     // unflatten masks
     // resize to 640x640
@@ -170,30 +153,33 @@ class SamInference {
       List<List<bool>> boolMask = List.generate(
         640,
         (j) => List.generate(640, (k) {
-          return resizedMask[j][k] > 0 &&
-              j >= y1 &&
-              j < y2 &&
-              k >= x1 &&
-              k < x2;
+          return resizedMask[j][k] > 0 && j >= y1 && j < y2 && k >= x1 && k < x2;
         }),
       );
 
-      int area = 0;
+      int marea = 0;
       for (int j = y1; j < y2; j++) {
         for (int k = x1; k < x2; k++) {
-          area += boolMask[j][k] ? 1 : 0;
+          marea += boolMask[j][k] ? 1 : 0;
         }
       }
+
+      int area = (x2 - x1) * (y2 - y1);
 
       ret.add({
         'xyxy': [x1, y1, x2, y2],
         'mask': boolMask,
+        'marea': marea,
         'area': area,
+        'confidence': confidences[i],
       });
     }
 
-    ret.sort((a, b) => (b['area']).compareTo(a['area']));
-    return ret;
+    ret.sort((a, b) => b['confidence'].compareTo(a['confidence']));
+    var nms = applyNMS(ret, 0.90);
+
+    nms.sort((a, b) => b['area'].compareTo(a['area']));
+    return nms;
   }
 
   List<Float32List> _transpose2dDouble(List<List<double>> m) {
@@ -223,9 +209,7 @@ class SamInference {
 
     // Check if matrices can be multiplied
     if (aCols != bRows) {
-      throw ArgumentError(
-        'Matrix dimensions do not match for multiplication: a[$aRows,$aCols] x b[$bRows,$bCols]',
-      );
+      throw ArgumentError('Matrix dimensions do not match for multiplication: a[$aRows,$aCols] x b[$bRows,$bCols]');
     }
 
     // Initialize the result matrix
@@ -264,18 +248,11 @@ class SamInference {
   }
 
   List<List<double>> _unflatten(Float32List flat, int h, int w) {
-    List<List<double>> matrix = List.generate(
-      h,
-      (i) => List.generate(w, (j) => flat[i * w + j].toDouble()),
-    );
+    List<List<double>> matrix = List.generate(h, (i) => List.generate(w, (j) => flat[i * w + j].toDouble()));
     return matrix;
   }
 
-  List<List<double>> _resizeMatrix(
-    List<List<double>> matrix,
-    int newHeight,
-    int newWidth,
-  ) {
+  List<List<double>> _resizeMatrix(List<List<double>> matrix, int newHeight, int newWidth) {
     if (matrix.isEmpty) return [];
     int oldHeight = matrix.length;
     int oldWidth = matrix[0].length;
@@ -294,6 +271,69 @@ class SamInference {
     return resized;
   }
 
-  /// Gets the interpreter instance
   Interpreter get interpreter => _interpreter;
+
+  // Applies Non-Maximum Suppression to the masks
+  List<Map<String, dynamic>> applyNMS(List<Map<String, dynamic>> masks, double iouThreshold) {
+    // If no masks or only one, return as is
+    if (masks.length <= 1) return masks;
+
+    // Sort by confidence (already done in _model2masks but ensuring here)
+    masks.sort((a, b) => b['confidence'].compareTo(a['confidence']));
+
+    List<Map<String, dynamic>> result = [];
+    List<bool> suppressed = List.filled(masks.length, false);
+
+    for (int i = 0; i < masks.length; i++) {
+      if (suppressed[i]) continue;
+
+      result.add(masks[i]);
+
+      for (int j = i + 1; j < masks.length; j++) {
+        if (suppressed[j]) continue;
+
+        double iou = calculateIoU(masks[i], masks[j]);
+        if (iou >= iouThreshold) {
+          suppressed[j] = true;
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // Calculates IoU (Intersection over Union) between two masks
+  double calculateIoU(Map<String, dynamic> maskA, Map<String, dynamic> maskB) {
+    // Extract bounding boxes
+    List<int> boxA = maskA['xyxy'];
+    List<int> boxB = maskB['xyxy'];
+
+    // Calculate intersection
+    int xA = max(boxA[0], boxB[0]);
+    int yA = max(boxA[1], boxB[1]);
+    int xB = min(boxA[2], boxB[2]);
+    int yB = min(boxA[3], boxB[3]);
+
+    // If boxes don't overlap
+    if (xB <= xA || yB <= yA) return 0.0;
+
+    // Instead of just using bounding boxes, use the actual mask for accurate IoU
+    int intersectionArea = 0;
+    List<List<bool>> maskAData = maskA['mask'];
+    List<List<bool>> maskBData = maskB['mask'];
+
+    for (int y = yA; y < yB; y++) {
+      for (int x = xA; x < xB; x++) {
+        if (maskAData[y][x] && maskBData[y][x]) {
+          intersectionArea++;
+        }
+      }
+    }
+
+    // Calculate union area: sum of both mask areas minus intersection
+    int unionArea = maskA['marea'] + maskB['marea'] - intersectionArea;
+
+    // Return IoU
+    return unionArea > 0 ? intersectionArea / unionArea : 0.0;
+  }
 }

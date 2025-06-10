@@ -1,11 +1,6 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:image/image.dart' as img;
 
 import 'sam_inference.dart';
 
@@ -27,15 +22,10 @@ class Maskinator {
       interpreter: Interpreter.fromAddress(samInf.interpreter.address),
     );
     */
-    return await compute(runBatchInference, {
-      'images': images,
-      'samInf': samInf,
-    });
+    return await compute(runBatchInference, {'images': images, 'samInf': samInf});
   }
 
-  Future<List<Map<String, dynamic>>> runBatchInference(
-    Map<String, dynamic> data,
-  ) async {
+  Future<List<Map<String, dynamic>>> runBatchInference(Map<String, dynamic> data) async {
     await data['samInf'].loadModel();
     final List<Map<String, dynamic>> results = [];
     for (var image in data['images']) {
@@ -46,16 +36,10 @@ class Maskinator {
   }
 
   Future<Map<String, dynamic>> runModelIsolate(File image) async {
-    return await compute(inference, {
-      'image': image,
-      'interpreterAddy': samInf.interpreter.address,
-      'samInf': samInf,
-    });
+    return await compute(inference, {'image': image, 'interpreterAddy': samInf.interpreter.address, 'samInf': samInf});
   }
 
-  static Future<Map<String, dynamic>> inference(
-    Map<String, dynamic> infData,
-  ) async {
+  static Future<Map<String, dynamic>> inference(Map<String, dynamic> infData) async {
     /*
     final samInf = SamInference();
     await infData['samInf'].loadModel(
