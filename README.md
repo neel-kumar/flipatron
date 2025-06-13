@@ -14,6 +14,7 @@ pip install -r requirements.txt
 
 ## FastSAM model
 To use any of the files or notebooks utilizing the FastSAM model, install from fast_requirements.txt
+Use https://huggingface.co/qualcomm/FastSam-X/tree/main to download the tflite model
 
 ```console
 conda activate <env-name>
