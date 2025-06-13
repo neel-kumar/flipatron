@@ -81,13 +81,11 @@ class SamInference {
     final inputTensor = _filePreprocess(image);
 
     var preProcessElapsedTime = DateTime.now().millisecondsSinceEpoch - preProcessStart;
-
     var inferenceTimeStart = DateTime.now().millisecondsSinceEpoch;
 
     _interpreter.runForMultipleInputs(inputTensor, outputBuff);
 
     var inferenceTimeElapsed = DateTime.now().millisecondsSinceEpoch - inferenceTimeStart;
-
     var postStart = DateTime.now().millisecondsSinceEpoch;
 
     var ann = _model2masks(outputBuff);

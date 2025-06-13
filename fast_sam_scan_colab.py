@@ -189,7 +189,7 @@ def in_area_range(masks, apct, amx):
     return p
 
 # uses upper and lower size bound
-def find_pages_nb(masks, apct, amx, fpct):
+def find_pages_nb(masks, apct, amx, fpct): # *
     p = []
     if len(masks) == 0:
         return p
@@ -205,7 +205,7 @@ def find_pages_nb(masks, apct, amx, fpct):
 
 # Test on full video
 
-def progress_bar(iteration, total, length=30, fill='█'):
+def progress_bar(iteration, total, length=30, fill='█'): # *
     percent = ("{0:.1f}").format(100 * (iteration / float(total)))
     filled_length = int(length * iteration // total)
     bar = fill * filled_length + '-' * (length - filled_length)
@@ -232,7 +232,7 @@ print("\nFastSAM on all frames took: ", time.time()-stt, "seconds")
 # slope over range is (slope) <-- filter for noise from sam
 
 # OPTMIZE W NUMPY FUNCS
-def mono(mask, rnge, slope):
+def mono(mask, rnge, slope): # *
     frs = mask['segmentation']
     for n4 in range(0, 4):
         ft = []
@@ -280,7 +280,7 @@ print(goodpg)
 
 # find the ranges of visible pages which will be the range in the video where a
 # page is fully visible. Choose middle frame for final picture
-def final_frames(gp):
+def final_frames(gp): # *
     ff = []
     i = 0
     while i < len(gp):
@@ -324,7 +324,7 @@ def convert_jpg_to_pdf(image_folder, output_pdf):
 
 # New function: Directly convert selected frames to PDF without saving as JPG
 
-def frames_to_pdf(frames, fin_pg, ff, output_pdf):
+def frames_to_pdf(frames, fin_pg, ff, output_pdf): # *
     pdf_images = []
     for pgi in ff:
         fin_pg[pgi] = sorted(fin_pg[pgi], key=lambda x:x['bbox'][0])
