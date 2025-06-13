@@ -30,7 +30,7 @@ class SamInference {
         ..threads = 4;
 
       _interpreter = interpreter ?? await Interpreter.fromAsset(MODEL_FILE_NAME, options: options);
-      print("Interpreter loaded successfully: $_interpreter");
+      //print("Interpreter loaded successfully: $_interpreter");
 
       var outputTensors = _interpreter.getOutputTensors();
 
@@ -72,7 +72,7 @@ class SamInference {
   /// Runs object detection on the input image
   Map<String, dynamic> predict(File image) {
     if (_interpreter == null) {
-      print("Interpreter not initialized");
+      print("Erro: Interpreter not initialized");
       return {};
     }
 

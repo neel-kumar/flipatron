@@ -145,9 +145,7 @@ class ScannerUtils {
 
   // find final frames with 1(if !isNotebook) or 2 (if isNotebook) masks, if many are valid in a row, choose the frame with the largest 'area'
   List<Map<String, dynamic>> finalFrames(List<Map<String, dynamic>> frames) {
-    print('Final Frames');
-    List<Map<String, dynamic>> ff = List.generate(frames.length, (i) => {'ann': [], 'stats': frames[i]['stats']}),
-      cur = [];
+    List<Map<String, dynamic>> ff = List.generate(frames.length, (i) => {'ann': [], 'stats': frames[i]['stats']}), cur = [];
     for (var i = 0; i < frames.length; i++) {
       if (frames[i]['ann'].isNotEmpty) {
         int tarea = 0;
@@ -155,9 +153,11 @@ class ScannerUtils {
         cur.add({'ann': List.from(frames[i]['ann']), 'tarea': tarea, 'i': i});
       }
 
-      if ((frames[i]['ann'].isEmpty || i == frames.length-1) && cur.isNotEmpty) {
+      if ((frames[i]['ann'].isEmpty || i == frames.length - 1) && cur.isNotEmpty) {
         cur.sort((a, b) => b['tarea'].compareTo(a['tarea']));
         ff[cur.first['i']]['ann'] = List.from(cur.first['ann']);
+        //int ci = (cur.length / 2) as int;
+        //ff[cur[ci]['i']]['ann'] = List.from(cur[ci]['ann']);
         cur.clear();
       }
     }

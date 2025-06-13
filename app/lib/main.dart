@@ -1,11 +1,16 @@
 import 'dart:io';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:image/image.dart' as img;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:flutter/services.dart'; // For MethodChannel
+import 'package:open_file/open_file.dart';
 
 import 'maskinator.dart';
 import 'scanner_utils.dart';
@@ -23,19 +28,17 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
+  bool devMode = false; // Toggle for development mode
   File? _videoFile;
   bool _extracting = false;
-  String _log = '';
-  final TextEditingController _frameRateController = TextEditingController(text: '1');
   double _frameRate = 5.0;
   bool isNotebook = true;
-
+  Uint8List _pdfBytes = Uint8List(0);
   // Store history of extractions: each entry is {log, frames, framesWithMasks, croppedMasks}
   final Map<String, dynamic> _devLog = {'log': '', 'frames': [], 'framesWithMasks': [], 'croppedMasks': []};
-
   void _appendLog(String msg) {
     setState(() {
-      _log += "$msg\n";
+      _devLog['log'] += "$msg\n";
     });
   }
 
@@ -43,11 +46,12 @@ class _MyAppState extends State<MyApp> {
     setState(() {
       _videoFile = null;
       _extracting = false;
-      _log = '';
       _devLog['log'] = '';
+      _devLog['frames'] = [];
       _devLog['frames'] = [];
       _devLog['framesWithMasks'] = [];
       _devLog['croppedMasks'] = [];
+      _pdfBytes = Uint8List(0);
     });
   }
 
@@ -90,7 +94,7 @@ class _MyAppState extends State<MyApp> {
         _devLog['framesWithMasks'] = [];
         _devLog['croppedMasks'] = [];
         _videoFile = videoFile;
-        _log = '';
+        _pdfBytes = Uint8List(0);
       });
       _appendLog('Selected video: ${videoFile.path}');
 
@@ -111,7 +115,6 @@ class _MyAppState extends State<MyApp> {
     var log = 'Segmented ${frames.length} frames.\n';
     for (var i = 0; i < modelOut.length; i++) {
       log += 'Frame ${i + 1}: ${modelOut[i]['stats']}\n';
-      print("$i: ${modelOut[i]["stats"]}");
     }
 
     List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.10, 0.70, 0.10, 5, 1, 40);
@@ -119,11 +122,6 @@ class _MyAppState extends State<MyApp> {
 
     for (var i = 0; i < filteredOut.length; i++) {
       log += 'Frame ${i + 1}: ${filteredOut[i]['ann'].length} pages found, ${finalPages[i]['ann'].length} final doc\n';
-      for (var j = 0; j < filteredOut[i]['ann'].length; j++) {
-        print(
-          "x1: ${filteredOut[i]['ann'][j]['xyxy'][0]}, y1: ${filteredOut[i]['ann'][j]['xyxy'][1]}, x2: ${filteredOut[i]['ann'][j]['xyxy'][2]}, y2: ${filteredOut[i]['ann'][j]['xyxy'][3]}",
-        );
-      }
     }
 
     List<img.Image> framesWithMasks = displayFramesWithMasks(frames, filteredOut);
@@ -134,12 +132,13 @@ class _MyAppState extends State<MyApp> {
     stopwatch.stop();
     log += 'Total scanning time: ${stopwatch.elapsedMilliseconds} ms\n';
 
+    final pdfBytes = await createPdfFromImages(croppedMasks);
     setState(() {
-      _log = log;
       _devLog['log'] = '${_devLog['log']}$log';
       _devLog['framesWithMasks'] = framesWithMasks;
       _devLog['croppedMasks'] = croppedMasks;
       _extracting = false;
+      _pdfBytes = pdfBytes;
     });
   }
 
@@ -254,31 +253,89 @@ class _MyAppState extends State<MyApp> {
     final cmd = '-i "${_videoFile!.path}" -vf fps=$_frameRate "$outPattern"';
     await FFmpegKit.execute(cmd);
     final RegExp framePattern = RegExp('^' + RegExp.escape(videoBase) + r'_\d{5}\.jpg');
-    final files =
-        framesDir
-            .listSync()
-            .whereType<File>()
-            .where((f) => framePattern.hasMatch(f.path.split(Platform.pathSeparator).last))
-            .toList()
-          ..sort((a, b) => a.path.compareTo(b.path));
+    final files = framesDir
+        .listSync()
+        .whereType<File>()
+        .where((f) => framePattern.hasMatch(f.path.split(Platform.pathSeparator).last))
+        .toList();
+
+    stopwatch.stop();
+    final elapsedMs = stopwatch.elapsedMilliseconds;
     setState(() {
-      // Save this extraction to history
       _devLog['frames'] = List<File>.from(files);
-      _devLog['log'] = '${_devLog['log']}Extracted ${files.length} frames.\n';
+      _devLog['log'] = '${_devLog['log']}Extracted ${files.length} frames.\nExtracting frames took $elapsedMs ms\n';
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() {});
     });
-    _appendLog('Extracted ${files.length} frames.');
-
-    stopwatch.stop();
-    final elapsedMs = stopwatch.elapsedMilliseconds;
-    print('Extracting frames took $elapsedMs ms\n');
-    setState(() {
-      _devLog['log'] = '${_devLog['log']}Extracting frames took $elapsedMs ms\n';
-    });
 
     return files;
+  }
+
+  Future<Uint8List> createPdfFromImages(List<img.Image> images) async {
+    // Create a PDF document
+    final pdf = pw.Document();
+
+    for (final image in images) {
+      // Convert img.Image to Uint8List in PNG format
+      final pngBytes = img.encodePng(image);
+
+      // Create a custom page format that matches the image dimensions exactly
+      // Convert image dimensions from pixels to points (1 point = 1/72 inch)
+      // We'll use a standard DPI of 72 for simplicity, making 1 pixel = 1 point
+      final pageFormat = PdfPageFormat(
+        image.width.toDouble(),
+        image.height.toDouble(),
+        marginAll: 0, // No margins
+      );
+
+      // Add each image as a full page with exact dimensions
+      pdf.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          margin: pw.EdgeInsets.zero, // Ensure no margins
+          build: (pw.Context context) {
+            return pw.Image(
+              pw.MemoryImage(pngBytes),
+              fit: pw.BoxFit.fill, // Fill the entire page exactly
+              width: image.width.toDouble(),
+              height: image.height.toDouble(),
+            );
+          },
+        ),
+      );
+    }
+
+    // Return the PDF as bytes
+    return pdf.save();
+  }
+
+  Future<void> savePdf(List<img.Image> images) async {
+    if (_pdfBytes == Uint8List(0)) return;
+
+    try {
+      final Directory appStore = await getApplicationDocumentsDirectory();
+
+      final String documentsPath = appStore.path;
+      final String fileName = 'flipatron_scan_${DateTime.now().millisecondsSinceEpoch}.pdf';
+      final String filePath = '$documentsPath/$fileName';
+
+      final File file = File(filePath);
+      await file.writeAsBytes(_pdfBytes);
+
+      await File(filePath).writeAsBytes(_pdfBytes);
+
+      await OpenFile.open(
+        filePath,
+        type: 'application/pdf',
+        //       uti: 'com.adobe.pdf',
+      );
+      setState(() {
+        _devLog['log'] += "PDF saved to: $filePath\n";
+      });
+    } catch (e) {
+      print('Error saving PDF: $e');
+    }
   }
 
   Widget build(BuildContext context) {
@@ -289,54 +346,6 @@ class _MyAppState extends State<MyApp> {
           padding: const EdgeInsets.all(20.0),
           child: Column(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Row(
-                      children: [
-                        const Text(
-                          'FPS:',
-                          style: TextStyle(
-                            color: Color(0xFFB3C6FF), // light blue for OLED
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Slider(
-                            value: _frameRate,
-                            min: 1.0,
-                            max: 30.0,
-                            divisions: 29,
-                            label: _frameRate.round().toString(),
-                            onChanged: _extracting
-                                ? null
-                                : (val) {
-                                    setState(() {
-                                      _frameRate = val.roundToDouble();
-                                      _frameRateController.text = _frameRate.toString();
-                                    });
-                                  },
-                            activeColor: _extracting ? Color(0xFF222B3A) : Color(0xFF4F8CFF),
-                            inactiveColor: Color(0xFF222B3A),
-                            thumbColor: _extracting ? Color(0xFF666666) : Colors.white,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(color: Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
-                          child: Text(
-                            _frameRate.round().toString(),
-                            style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
               // Toggle button between notebook and pages
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16.0),
@@ -470,6 +479,138 @@ class _MyAppState extends State<MyApp> {
                   ],
                 ),
               ),
+              // Developer mode toggle
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8.0),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: devMode ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        'Developer Mode',
+                        style: TextStyle(
+                          color: devMode ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
+                          fontSize: 14,
+                          fontWeight: devMode ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 20),
+                    GestureDetector(
+                      onTap: _extracting
+                          ? null
+                          : () {
+                              setState(() {
+                                devMode = !devMode;
+                              });
+                            },
+                      child: Opacity(
+                        opacity: _extracting ? 0.5 : 1.0,
+                        child: Container(
+                          width: 120,
+                          height: 50,
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(16),
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF1A2233), Color(0xFF2D3546)],
+                              begin: Alignment.bottomLeft,
+                              end: Alignment.topRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 6, offset: const Offset(0, 2)),
+                            ],
+                          ),
+                          child: AnimatedAlign(
+                            duration: const Duration(milliseconds: 250),
+                            alignment: devMode ? Alignment.centerRight : Alignment.centerLeft,
+                            child: Container(
+                              width: 50,
+                              height: 38,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF4F8CFF), Color(0xFF3A70E0)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: const Color(0xFF3A70E0).withOpacity(0.4),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Icon(
+                                  devMode ? Icons.code : Icons.cancel_presentation_rounded,
+                                  color: Colors.white,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // FPS slider
+              if (devMode)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Text(
+                            'FPS:',
+                            style: TextStyle(
+                              color: Color(0xFFB3C6FF), // light blue for OLED
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Slider(
+                              value: _frameRate,
+                              min: 1.0,
+                              max: 30.0,
+                              divisions: 29,
+                              label: _frameRate.round().toString(),
+                              onChanged: _extracting
+                                  ? null
+                                  : (val) {
+                                      setState(() {
+                                        _frameRate = val.roundToDouble();
+                                      });
+                                    },
+                              activeColor: _extracting ? Color(0xFF222B3A) : Color(0xFF4F8CFF),
+                              inactiveColor: Color(0xFF222B3A),
+                              thumbColor: _extracting ? Color(0xFF666666) : Colors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(color: Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                            child: Text(
+                              _frameRate.round().toString(),
+                              style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               const SizedBox(height: 20),
               SizedBox(
                 width: double.infinity,
@@ -599,118 +740,145 @@ class _MyAppState extends State<MyApp> {
                   padding: EdgeInsets.all(6.0),
                   child: LinearProgressIndicator(color: Color(0xFF4F8CFF), backgroundColor: Color(0xFF222B3A)),
                 ),
-              const SizedBox(height: 16),
-              // Show extraction history
+              const SizedBox(height: 16), // Show extraction history
               if (_devLog['frames'] != null && (_devLog['frames'] as List).isNotEmpty)
                 Expanded(
-                  child: Column(
+                  child: ListView(
                     children: [
-                      Expanded(
-                        child: ListView(
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 24),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF10131A),
+                          borderRadius: BorderRadius.circular(18),
+                          boxShadow: [
+                            BoxShadow(color: Colors.blueGrey.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Container(
-                              margin: const EdgeInsets.only(bottom: 24),
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF10131A),
-                                borderRadius: BorderRadius.circular(18),
-                                boxShadow: [
-                                  BoxShadow(color: Colors.blueGrey.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
-                                ],
+                            if (devMode && (_devLog['log'] as String).isNotEmpty)
+                              Text(
+                                _devLog['log'],
+                                style: const TextStyle(fontFamily: 'monospace', color: Color(0xFFB3C6FF), fontSize: 13),
                               ),
-                              child: Column(
+                            if ((_devLog['frames'] as List).isNotEmpty)
+                              Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  if (_log.isNotEmpty)
-                                    Text(
-                                      _log,
-                                      style: const TextStyle(fontFamily: 'monospace', color: Color(0xFFB3C6FF), fontSize: 13),
+                                  if (devMode)
+                                    const Text(
+                                      "Original Frames:",
+                                      style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
                                     ),
-                                  if ((_devLog['frames'] as List).isNotEmpty)
+                                  if (devMode)
+                                    SizedBox(
+                                      height: 180,
+                                      child: ListView.builder(
+                                        scrollDirection: Axis.horizontal,
+                                        itemCount: (_devLog['frames'] as List).length,
+                                        itemBuilder: (context, fidx) {
+                                          final frames = _devLog['frames'] as List<File>;
+                                          return Padding(
+                                            padding: const EdgeInsets.all(8.0),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(6),
+                                              child: Image.file(frames[fidx]),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ), // Display frames with masks
+                                  if (devMode && (_devLog['framesWithMasks'] as List).isNotEmpty)
                                     Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        const Text(
-                                          "Original Frames:",
-                                          style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 12.0),
+                                          child: Text(
+                                            "Frames with Masks:",
+                                            style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                          ),
                                         ),
-                                        SizedBox(
-                                          height: 180,
-                                          child: ListView.builder(
-                                            scrollDirection: Axis.horizontal,
-                                            itemCount: (_devLog['frames'] as List).length,
-                                            itemBuilder: (context, fidx) {
-                                              final frames = _devLog['frames'] as List<File>;
-                                              return Padding(
-                                                padding: const EdgeInsets.all(8.0),
-                                                child: ClipRRect(
-                                                  borderRadius: BorderRadius.circular(6),
-                                                  child: Image.file(frames[fidx]),
-                                                ),
-                                              );
-                                            },
+                                        for (var i in _devLog['framesWithMasks'] as List<img.Image>)
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 16.0),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(16),
+                                              child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
+                                            ),
                                           ),
-                                        ), // Display frames with masks
-                                        if ((_devLog['framesWithMasks'] as List).isNotEmpty)
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Padding(
-                                                padding: EdgeInsets.symmetric(vertical: 12.0),
-                                                child: Text(
-                                                  "Frames with Masks:",
-                                                  style: TextStyle(
-                                                    color: Color(0xFFB3C6FF),
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                              for (var i in _devLog['framesWithMasks'] as List<img.Image>)
-                                                Padding(
-                                                  padding: const EdgeInsets.only(bottom: 16.0),
-                                                  child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(16),
-                                                    child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
-                                                  ),
-                                                ),
-                                            ],
+                                      ],
+                                    ),
+                                  // Display cropped masks
+                                  if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
+                                    Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Padding(
+                                          padding: EdgeInsets.symmetric(vertical: 12.0),
+                                          child: Text(
+                                            "Scanned Pages:",
+                                            style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
                                           ),
-                                        // Display cropped masks
-                                        if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
-                                          Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
-                                            children: [
-                                              const Padding(
-                                                padding: EdgeInsets.symmetric(vertical: 12.0),
-                                                child: Text(
-                                                  "Cropped Masks for Final Pages:",
-                                                  style: TextStyle(
-                                                    color: Color(0xFFB3C6FF),
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                              ),
-                                              for (var i in _devLog['croppedMasks'] as List<img.Image>)
-                                                Padding(
-                                                  padding: const EdgeInsets.only(bottom: 16.0),
-                                                  child: ClipRRect(
-                                                    borderRadius: BorderRadius.circular(16),
-                                                    child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
-                                                  ),
-                                                ),
-                                            ],
+                                        ),
+                                        for (var i in _devLog['croppedMasks'] as List<img.Image>)
+                                          Padding(
+                                            padding: const EdgeInsets.only(bottom: 16.0),
+                                            child: ClipRRect(
+                                              borderRadius: BorderRadius.circular(16),
+                                              child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
+                                            ),
                                           ),
                                       ],
                                     ),
                                 ],
                               ),
-                            ),
                           ],
                         ),
                       ),
                     ],
+                  ),
+                ),
+              // Save PDF button locked to bottom
+              if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16.0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 60,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(color: const Color(0xFF4CAF50).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
+                        ],
+                      ),
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.picture_as_pdf, size: 28, color: Colors.white),
+                        label: const Text(
+                          'Save PDF',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.transparent,
+                          shadowColor: Colors.transparent,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: () async {
+                          final croppedMasks = _devLog['croppedMasks'] as List<img.Image>;
+                          savePdf(croppedMasks);
+                        },
+                      ),
+                    ),
                   ),
                 ),
             ],
