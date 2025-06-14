@@ -2,15 +2,18 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+//import 'package:opencv_dart/opencv_dart.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+//import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart'; // For MethodChannel
 import 'package:open_file/open_file.dart';
+import 'package:video_frame_extractor/video_frame_extractor.dart';
+import 'package:video_player/video_player.dart';
 
 import 'maskinator.dart';
 import 'scanner_utils.dart';
@@ -31,7 +34,7 @@ class _MyAppState extends State<MyApp> {
   bool devMode = false; // Toggle for development mode
   File? _videoFile;
   bool _extracting = false;
-  double _frameRate = 5.0;
+  double _frameRate = 3.0;
   bool isNotebook = true;
   Uint8List _pdfBytes = Uint8List(0);
   // Store history of extractions: each entry is {log, frames, framesWithMasks, croppedMasks}
@@ -58,36 +61,12 @@ class _MyAppState extends State<MyApp> {
   Future<void> _pickVideo(ImageSource source) async {
     setState(() => _extracting = true);
     final picker = ImagePicker();
+
     final picked = await picker.pickVideo(source: source);
     if (picked != null) {
       // If the video is from the camera, rotate to horizontal if needed
       File videoFile = File(picked.path);
-      if (source == ImageSource.camera) {
-        final tempDir = await getTemporaryDirectory();
-        final rotatedPath = '${tempDir.path}/rotated_${DateTime.now().millisecondsSinceEpoch}.mp4';
-        // Use ffmpeg to rotate the video to horizontal (landscape)
-        // This rotates 90 degrees clockwise if the video is portrait
-        // and does nothing if already landscape
-        // The transpose=1 filter rotates 90 degrees clockwise
-        // The select filter only applies if height > width
-        final probeCmd = '-v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "${videoFile.path}"';
-        final probeResult = await FFmpegKit.executeWithArguments(probeCmd.split(' '));
-        final probeOutput = await probeResult.getOutput();
-        int width = 0, height = 0;
-        if (probeOutput != null && probeOutput.contains('x')) {
-          final parts = probeOutput.trim().split('x');
-          if (parts.length == 2) {
-            width = int.tryParse(parts[0]) ?? 0;
-            height = int.tryParse(parts[1]) ?? 0;
-          }
-        }
-        if (height > width) {
-          // Portrait, rotate to landscape
-          final rotateCmd = '-i "${videoFile.path}" -vf "transpose=1" -c:a copy "$rotatedPath" -y';
-          await FFmpegKit.execute(rotateCmd);
-          videoFile = File(rotatedPath);
-        }
-      }
+
       setState(() {
         _devLog['log'] = '';
         _devLog['frames'] = [];
@@ -117,7 +96,7 @@ class _MyAppState extends State<MyApp> {
       log += 'Frame ${i + 1}: ${modelOut[i]['stats']}\n';
     }
 
-    List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.10, 0.70, 0.10, 5, 1, 40);
+    List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1, 40);
     List<Map<String, dynamic>> finalPages = ScannerUtils().finalFrames(filteredOut);
 
     for (var i = 0; i < filteredOut.length; i++) {
@@ -235,41 +214,82 @@ class _MyAppState extends State<MyApp> {
     return croppedImages;
   }
 
+  Future<Duration> getVideoDuration(File file) async {
+    final controller = VideoPlayerController.file(file);
+    await controller.initialize(); // This loads the video metadata
+    final duration = controller.value.duration;
+    await controller.dispose();
+    return duration;
+  }
+
+/*
   Future<List<File>> _extractFrames() async {
     if (_videoFile == null) return [];
-    setState(() => _extracting = true);
     var stopwatch = Stopwatch()..start();
 
     final dir = await getTemporaryDirectory();
-    final framesDir = Directory('${dir.path}/frames');
-    if (framesDir.existsSync()) {
-      try {
-        framesDir.deleteSync(recursive: true);
-      } catch (_) {}
-    }
-    framesDir.createSync();
-    final videoBase = _videoFile!.path.split(Platform.pathSeparator).last.split('.').first;
-    final outPattern = '${framesDir.path}/' + videoBase + '_%05d.jpg';
-    final cmd = '-i "${_videoFile!.path}" -vf fps=$_frameRate "$outPattern"';
-    await FFmpegKit.execute(cmd);
-    final RegExp framePattern = RegExp('^' + RegExp.escape(videoBase) + r'_\d{5}\.jpg');
-    final files = framesDir
-        .listSync()
-        .whereType<File>()
-        .where((f) => framePattern.hasMatch(f.path.split(Platform.pathSeparator).last))
-        .toList();
 
-    stopwatch.stop();
+    var filename = _videoFile?.path;
+    final vidCap = VideoCapture.fromFile(filename!);
+
+    List<dynamic> extractedFrames = [];
+
+    for (var i = 0; ; i++) {
+      var success, frame;
+      (success, frame) = vidCap.read();
+      if (!success) break;
+      extractedFrames.add(frame);
+    }
+
+    final duration = await getVideoDuration(_videoFile!);
+    final durs = duration.inMilliseconds / 1000;
+    var frame_interval = (extractedFrames.length / durs / _frameRate).round();
+
+    List<File> frames = [];
+    for (var i = 0; i < extractedFrames.length; i += frame_interval) {
+      Mat ef = extractedFrames[i];
+      final fileName = '${dir.path}/frame_$i.png';
+      File frameFile = File(fileName);
+      await frameFile.writeAsBytes(ef.data);
+      frames.add(frameFile);
+    }
+
     final elapsedMs = stopwatch.elapsedMilliseconds;
     setState(() {
-      _devLog['frames'] = List<File>.from(files);
-      _devLog['log'] = '${_devLog['log']}Extracted ${files.length} frames.\nExtracting frames took $elapsedMs ms\n';
+      _devLog['frames'] = frames;
+      _devLog['log'] =
+          '${_devLog['log']}Extracted ${frames.length} frames.\nExtracting frames took $elapsedMs ms\n';
     });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      setState(() {});
-    });
+    return frames;
+  }
+  */
 
-    return files;
+  Future<List<File>> _extractFrames() async {
+    if (_videoFile == null) return [];
+    var stopwatch = Stopwatch()..start();
+
+    final dir = await getTemporaryDirectory();
+
+    final duration = await getVideoDuration(_videoFile!);
+    final durms = duration.inMilliseconds;
+    final imgc = (_frameRate * durms / 1000).round();
+
+    final filenames = await VideoFrameExtractor.fromFile(
+      video: _videoFile!,
+      imagesCount: imgc,
+      quality: 100,
+      destinationDirectoryPath: dir.path,
+    );
+
+    final frames = filenames.map((filename) => File(filename)).toList();
+
+    final elapsedMs = stopwatch.elapsedMilliseconds;
+    setState(() {
+      _devLog['frames'] = frames;
+      _devLog['log'] =
+          '${_devLog['log']}Extracted ${frames.length} frames.\nExtracting frames took $elapsedMs ms\nFilenames: $filenames\n';
+    });
+    return frames;
   }
 
   Future<Uint8List> createPdfFromImages(List<img.Image> images) async {
@@ -548,11 +568,7 @@ class _MyAppState extends State<MyApp> {
                                 ],
                               ),
                               child: Center(
-                                child: Icon(
-                                  devMode ? Icons.code : Icons.cancel_presentation_rounded,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
+                                child: Icon(devMode ? Icons.code : Icons.cancel_rounded, color: Colors.white, size: 20),
                               ),
                             ),
                           ),
@@ -819,7 +835,7 @@ class _MyAppState extends State<MyApp> {
                                         const Padding(
                                           padding: EdgeInsets.symmetric(vertical: 12.0),
                                           child: Text(
-                                            "Scanned Pages:",
+                                            "Scan Sucessful!",
                                             style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
                                           ),
                                         ),

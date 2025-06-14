@@ -115,11 +115,25 @@ class ScannerUtils {
     return frames;
   }
 
-  List<Map<String, dynamic>> finalNumber(List<Map<String, dynamic>> frames, bool isNotebook) {
+  List<Map<String, dynamic>> finalNumber(List<Map<String, dynamic>> frames, bool isNotebook, [int threshold = 100]) {
     List<Map<String, dynamic>> ret = [];
     for (var frame in frames) {
       if (frame['ann'].length == (isNotebook ? 2 : 1)) {
-        ret.add(frame);
+        if (isNotebook) {
+          // either xyxy[0] and xyxy[2] or xyxy[1] and xyxy[3] must be within threshold pixels of each other
+          List<int> xyxy1 = frame['ann'][0]['xyxy'];
+          List<int> xyxy2 = frame['ann'][1]['xyxy'];
+          bool close =
+              (((xyxy1[0] - xyxy2[0]).abs() <= threshold) && ((xyxy1[2] - xyxy2[2]).abs() <= threshold)) ||
+              (((xyxy1[1] - xyxy2[1]).abs() <= threshold) && ((xyxy1[3] - xyxy2[3]).abs() <= threshold));
+          if (!close) {
+            ret.add({'ann': [], 'stats': frame['stats']});
+          } else {
+            ret.add(frame);
+          }
+        } else {
+          ret.add(frame);
+        }
       } else {
         ret.add({'ann': [], 'stats': frame['stats']});
       }
