@@ -89,6 +89,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.2"
+  dartcv4:
+    dependency: transitive
+    description:
+      name: dartcv4
+      sha256: "383231deeaf16a1da4ee0eb098ab969f637a33d7ed84bbdd6b59d213ef1f3bc3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.1.3"
   fake_async:
     dependency: transitive
     description:
@@ -105,30 +113,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.4"
-  ffmpeg_kit_flutter_android:
-    dependency: transitive
-    description:
-      name: ffmpeg_kit_flutter_android
-      sha256: "1bcd2e18169862d9782f019e3e83f92a41a12692deb25e0e767ecd44518c0f7e"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.4.0"
-  ffmpeg_kit_flutter_new:
-    dependency: "direct main"
-    description:
-      name: ffmpeg_kit_flutter_new
-      sha256: dbaf0f4963b08a034a4f787276c1e12efc36a56670693f1721e46f95554f0979
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.6.1"
-  ffmpeg_kit_flutter_platform_interface:
-    dependency: transitive
-    description:
-      name: ffmpeg_kit_flutter_platform_interface
-      sha256: addf046ae44e190ad0101b2fde2ad909a3cd08a2a109f6106d2f7048b7abedee
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.1"
   file_selector_linux:
     dependency: transitive
     description:
@@ -416,6 +400,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.0.3"
+  opencv_dart:
+    dependency: "direct main"
+    description:
+      name: opencv_dart
+      sha256: "0c31f9352951147a463a96c117e5bd54777fa99fe5b12c1c2e351a543fac2c2f"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.4.1"
   path:
     dependency: transitive
     description:
@@ -613,14 +605,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.4"
-  video_frame_extractor:
-    dependency: "direct main"
-    description:
-      name: video_frame_extractor
-      sha256: "7011e7f6a0b3202389223a75bc50f9fd45fdf4a2a5c7e5b2bd59ac0a61eb005f"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.0.3"
   video_player:
     dependency: "direct main"
     description:
@@ -661,14 +645,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.3.5"
-  video_thumbnail:
-    dependency: transitive
-    description:
-      name: video_thumbnail
-      sha256: "181a0c205b353918954a881f53a3441476b9e301641688a581e0c13f00dc588b"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.5.6"
   vm_service:
     dependency: transitive
     description:

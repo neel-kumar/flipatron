@@ -2,17 +2,15 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-//import 'package:opencv_dart/opencv_dart.dart';
+import 'package:opencv_dart/opencv_dart.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-//import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart'; // For MethodChannel
 import 'package:open_file/open_file.dart';
-import 'package:video_frame_extractor/video_frame_extractor.dart';
 import 'package:video_player/video_player.dart';
 
 import 'maskinator.dart';
@@ -222,7 +220,6 @@ class _MyAppState extends State<MyApp> {
     return duration;
   }
 
-/*
   Future<List<File>> _extractFrames() async {
     if (_videoFile == null) return [];
     var stopwatch = Stopwatch()..start();
@@ -249,45 +246,14 @@ class _MyAppState extends State<MyApp> {
     for (var i = 0; i < extractedFrames.length; i += frame_interval) {
       Mat ef = extractedFrames[i];
       final fileName = '${dir.path}/frame_$i.png';
-      File frameFile = File(fileName);
-      await frameFile.writeAsBytes(ef.data);
-      frames.add(frameFile);
+      imwrite(fileName, ef);
+      frames.add(File(fileName));
     }
 
     final elapsedMs = stopwatch.elapsedMilliseconds;
     setState(() {
       _devLog['frames'] = frames;
-      _devLog['log'] =
-          '${_devLog['log']}Extracted ${frames.length} frames.\nExtracting frames took $elapsedMs ms\n';
-    });
-    return frames;
-  }
-  */
-
-  Future<List<File>> _extractFrames() async {
-    if (_videoFile == null) return [];
-    var stopwatch = Stopwatch()..start();
-
-    final dir = await getTemporaryDirectory();
-
-    final duration = await getVideoDuration(_videoFile!);
-    final durms = duration.inMilliseconds;
-    final imgc = (_frameRate * durms / 1000).round();
-
-    final filenames = await VideoFrameExtractor.fromFile(
-      video: _videoFile!,
-      imagesCount: imgc,
-      quality: 100,
-      destinationDirectoryPath: dir.path,
-    );
-
-    final frames = filenames.map((filename) => File(filename)).toList();
-
-    final elapsedMs = stopwatch.elapsedMilliseconds;
-    setState(() {
-      _devLog['frames'] = frames;
-      _devLog['log'] =
-          '${_devLog['log']}Extracted ${frames.length} frames.\nExtracting frames took $elapsedMs ms\nFilenames: $filenames\n';
+      _devLog['log'] = '${_devLog['log']}Extracted ${frames.length} frames to ${dir.path}\nExtracting frames took $elapsedMs ms\n';
     });
     return frames;
   }
