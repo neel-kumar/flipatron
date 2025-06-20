@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:opencv_dart/opencv_dart.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -80,8 +81,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> processVideo() async {
-    final List<File> frames = await _extractFrames();
-    //_segmentFrames(frames);
+    final List<File> frames = await _extractFramesIso(_videoFile);
 
     var stopwatch = Stopwatch()..start();
 
@@ -220,41 +220,54 @@ class _MyAppState extends State<MyApp> {
     return duration;
   }
 
-  Future<List<File>> _extractFrames() async {
-    if (_videoFile == null) return [];
-    var stopwatch = Stopwatch()..start();
+  Future<List<File>> _extractFramesIso(File? videoFile) async {
+    if (videoFile == null)
+      return [];
+    else {
+      var stopwatch = Stopwatch()..start();
 
-    final dir = await getTemporaryDirectory();
+      final dir = await getTemporaryDirectory();
+      final dura = (await getVideoDuration(videoFile)).inMilliseconds;
 
-    var filename = _videoFile?.path;
+      var frames = await compute(_extractFrames, {'videoFile': videoFile, 'frameRate': _frameRate, 'dir': dir, 'duration': dura});
+
+      final elapsedMs = stopwatch.elapsedMilliseconds;
+      setState(() {
+        _devLog['frames'] = frames;
+        _devLog['log'] = '${_devLog['log']}Extracted ${frames.length} in $elapsedMs ms\n';
+      });
+
+      return frames;
+    }
+  }
+
+  static Future<List<File>> _extractFrames(Map<String, dynamic> data) async {
+    File videoFile = data['videoFile'];
+    double frameRate = data['frameRate'];
+    var dir = data['dir'] as Directory;
+    if (videoFile == null) return [];
+
+    var filename = videoFile.path;
     final vidCap = VideoCapture.fromFile(filename!);
 
-    List<dynamic> extractedFrames = [];
+    final duration = data['duration'] as int;
+    final durs = duration / 1000;
+    var frame_interval = (vidCap.get(5) / frameRate).round();
+
+    List<File> frames = [];
 
     for (var i = 0; ; i++) {
       var success, frame;
       (success, frame) = vidCap.read();
       if (!success) break;
-      extractedFrames.add(frame);
+
+      if (i % frame_interval == 0) {
+        final fileName = '${dir.path}/frame_$i.png';
+        imwrite(fileName, frame);
+        frames.add(File(fileName));
+      }
     }
-
-    final duration = await getVideoDuration(_videoFile!);
-    final durs = duration.inMilliseconds / 1000;
-    var frame_interval = (extractedFrames.length / durs / _frameRate).round();
-
-    List<File> frames = [];
-    for (var i = 0; i < extractedFrames.length; i += frame_interval) {
-      Mat ef = extractedFrames[i];
-      final fileName = '${dir.path}/frame_$i.png';
-      imwrite(fileName, ef);
-      frames.add(File(fileName));
-    }
-
-    final elapsedMs = stopwatch.elapsedMilliseconds;
-    setState(() {
-      _devLog['frames'] = frames;
-      _devLog['log'] = '${_devLog['log']}Extracted ${frames.length} frames to ${dir.path}\nExtracting frames took $elapsedMs ms\n';
-    });
+    
     return frames;
   }
 
