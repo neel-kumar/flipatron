@@ -30,14 +30,6 @@
 	<string>Main</string>
 	<key>UISupportedInterfaceOrientations</key>
 
-    <!-- Camera access -->
-    <key>NSCameraUsageDescription</key>
-    <string>This app needs camera access to take photos</string>
-    
-    <!-- Photo library access -->
-    <key>NSPhotoLibraryUsageDescription</key>
-    <string>This app needs photo library access to select images</string>
-
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
@@ -54,5 +46,11 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>App needs access to photo lib for profile images</string>
+	<key>NSCameraUsageDescription</key>
+	<string>To capture profile photo please grant camera access</string>
+
 </dict>
 </plist>
