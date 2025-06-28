@@ -17,11 +17,6 @@ class Maskinator {
 
   Future<List<Map<String, dynamic>>> runBatchIso(List<File> images) async {
     await init();
-    /*
-    await samInf.loadModel(
-      interpreter: Interpreter.fromAddress(samInf.interpreter.address),
-    );
-    */
     return await compute(runBatchInference, {'images': images, 'samInf': samInf});
   }
 
@@ -40,12 +35,6 @@ class Maskinator {
   }
 
   static Future<Map<String, dynamic>> inference(Map<String, dynamic> infData) async {
-    /*
-    final samInf = SamInference();
-    await infData['samInf'].loadModel(
-      interpreter: Interpreter.fromAddress(infData['interpreterAddy']),
-    );
-    */
     return await infData['samInf'].predict(infData['image']);
   }
 }

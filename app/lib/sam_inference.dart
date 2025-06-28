@@ -99,6 +99,7 @@ class SamInference {
     await tempFile.writeAsString(jsonEncode(ann));
 */
 
+    print('PREDICTION TOOK $inferenceTimeElapsed ms');
     return {
       "ann": ann,
       "stats": {"pre": preProcessElapsedTime, "inf": inferenceTimeElapsed, "post": postTime},

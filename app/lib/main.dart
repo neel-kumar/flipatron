@@ -2,12 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
-import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:opencv_dart/opencv_dart.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -17,7 +15,6 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart'; // For MethodChannel
 import 'package:open_file/open_file.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 
 import 'maskinator.dart';
@@ -31,7 +28,7 @@ void onStart(ServiceInstance service) async {
     print('background started');
     final List<String> framePaths = (event!['frames'] as List).cast<String>();
     final frames = framePaths.map((path) => File(path)).toList();
-    
+
     Maskinator fastSam = Maskinator();
     List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames);
 
@@ -98,6 +95,13 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  static Future<List<dynamic>> _loadAndDecodeJson(String resultPath) async {
+    final file = File(resultPath);
+    final result = jsonDecode(await file.readAsString()) as List<dynamic>;
+    await file.delete();
+    return result;
+  }
+
   void _restartApp() {
     final service = FlutterBackgroundService();
     service.invoke('stop');
@@ -122,15 +126,15 @@ class _MyAppState extends State<MyApp> {
       // If the video is from the camera, rotate to horizontal if needed
       File videoFile = File(picked.path);
 
-			setState(() {
-					_devLog['log'] = '';
-					_devLog['frames'] = [];
-					_devLog['framesWithMasks'] = [];
-					_devLog['croppedMasks'] = [];
-					_videoFile = videoFile;
-					_pdfBytes = Uint8List(0);
-					});
-			_appendLog('Selected video: ${videoFile.path}');
+      setState(() {
+        _devLog['log'] = '';
+        _devLog['frames'] = [];
+        _devLog['framesWithMasks'] = [];
+        _devLog['croppedMasks'] = [];
+        _videoFile = videoFile;
+        _pdfBytes = Uint8List(0);
+      });
+      _appendLog('Selected video: ${videoFile.path}');
 
       processVideo();
     }
@@ -140,9 +144,9 @@ class _MyAppState extends State<MyApp> {
     final List<File> frames = await _extractFramesIso(_videoFile);
     final framePaths = frames.map((f) => f.path).toList();
 
-		setState(() {
-				_processingMessage = 'You may use other apps while your video is processed';
-				});
+    setState(() {
+      _processingMessage = 'Use other apps while your video is processed';
+    });
 
     final service = FlutterBackgroundService();
     service.startService();
@@ -152,10 +156,7 @@ class _MyAppState extends State<MyApp> {
 
     service.on('update').listen((event) async {
       final String resultPath = event!['result_path'];
-      final file = File(resultPath);
-      final result = jsonDecode(await file.readAsString());
-      await file.delete();
-
+      final result = await compute(_loadAndDecodeJson, resultPath);
       final modelOut = (result as List).cast<Map<String, dynamic>>();
 
       var log = 'Segmented ${frames.length} frames.\n';
@@ -341,7 +342,7 @@ class _MyAppState extends State<MyApp> {
         frames.add(File(fileName));
       }
     }
-    
+
     return frames;
   }
 
@@ -725,7 +726,9 @@ class _MyAppState extends State<MyApp> {
                                 showModalBottomSheet(
                                   context: context,
                                   backgroundColor: const Color(0xFF10131A),
-                                  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                                  shape: const RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                                  ),
                                   builder: (context) {
                                     return Padding(
                                       padding: const EdgeInsets.all(24.0),
@@ -878,7 +881,11 @@ class _MyAppState extends State<MyApp> {
                                               padding: EdgeInsets.symmetric(vertical: 12.0),
                                               child: Text(
                                                 "Frames with Masks:",
-                                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                                style: TextStyle(
+                                                  color: Color(0xFFB3C6FF),
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                               ),
                                             ),
                                             for (var i in _devLog['framesWithMasks'] as List<img.Image>)
@@ -900,7 +907,11 @@ class _MyAppState extends State<MyApp> {
                                               padding: EdgeInsets.symmetric(vertical: 12.0),
                                               child: Text(
                                                 "Scan Sucessful!",
-                                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                                style: TextStyle(
+                                                  color: Color(0xFFB3C6FF),
+                                                  fontSize: 16,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
                                               ),
                                             ),
                                             for (var i in _devLog['croppedMasks'] as List<img.Image>)
