@@ -1,10 +1,22 @@
 class ScannerUtils {
   List<Map<String, dynamic>> filterByArea(List<Map<String, dynamic>> masks, double minPer, double maxPer, double fpct) {
-    List<List<bool>> boolMask = masks[0]['ann'][0]['mask'];
+    if (masks.isEmpty || (masks[0]['ann'] as List).isEmpty) {
+      return masks;
+    }
+    final rawMask = masks[0]['ann'][0]['mask'] as List;
+    if (rawMask.isEmpty) {
+      return masks;
+    }
+    final boolMask = rawMask.map((row) => (row as List).cast<bool>()).toList();
+    if (boolMask.isEmpty || boolMask[0].isEmpty) {
+      return masks;
+    }
     int frameSize = boolMask.length * boolMask[0].length;
     List<Map<String, dynamic>> filteredMasks = [];
     for (var frame in masks) {
-      List<Map<String, dynamic>> filteredAnn = frame['ann'].where((ann) {
+			final rawa = frame['ann'] as List;
+			List<Map<String, dynamic>> frameAnn = rawa.cast<Map<String, dynamic>>();
+      List<Map<String, dynamic>> filteredAnn = frameAnn.where((ann) {
         int area = ann['area'];
         int numFalses = area - (ann['marea'] as int);
         return area >= minPer * frameSize && area <= maxPer * frameSize && numFalses < fpct * area;
@@ -14,7 +26,11 @@ class ScannerUtils {
     return filteredMasks;
   }
 
-  bool mono(List<List<bool>> bmask, List<int> xyxy, int rnge, double slope) {
+  bool mono(List<dynamic> bmaskRaw, List<int> xyxy, int rnge, double slope) {
+    final bmask = bmaskRaw.map((row) => (row as List).cast<bool>()).toList();
+    if (bmask.isEmpty || bmask[0].isEmpty) {
+      return true;
+    }
     List<List<int>> firstTrue = [];
     List<int> fw = List.filled(bmask.length, bmask[0].length - 1), bc = List.filled(bmask.length, 0);
     for (var i = 0; i < bmask.length; i++) {
@@ -65,9 +81,9 @@ class ScannerUtils {
   List<Map<String, dynamic>> filterByMono(List<Map<String, dynamic>> masks, int rnge, double slope) {
     List<Map<String, dynamic>> filteredMasks = [];
     for (var frame in masks) {
-      List<Map<String, dynamic>> filteredAnn = frame['ann'].where((ann) {
-        return mono(ann['mask'], ann['xyxy'], rnge, slope);
-      }).toList();
+      List<Map<String, dynamic>> filteredAnn = (frame['ann'] as List).where((ann) {
+        return mono(ann['mask'], (ann['xyxy'] as List).cast<int>(), rnge, slope);
+      }).toList().cast<Map<String, dynamic>>();
       filteredMasks.add({'ann': filteredAnn, 'stats': frame['stats']});
     }
     return filteredMasks;
@@ -78,8 +94,8 @@ class ScannerUtils {
     List<bool> goodMasks = List.filled(masks.length, true);
     for (var i = 0; i < masks.length; i++) {
       for (var j = i + 1; j < masks.length; j++) {
-        List<int> xyxy1 = masks[i]['xyxy'];
-        List<int> xyxy2 = masks[j]['xyxy'];
+        List<int> xyxy1 = (masks[i]['xyxy'] as List).cast<int>();
+        List<int> xyxy2 = (masks[j]['xyxy'] as List).cast<int>();
 
         num closeCorners =
             (((xyxy1[0] - xyxy2[0]).abs() <= threshold) ? 1 : 0) +
@@ -121,8 +137,8 @@ class ScannerUtils {
       if (frame['ann'].length == (isNotebook ? 2 : 1)) {
         if (isNotebook) {
           // either xyxy[0] and xyxy[2] or xyxy[1] and xyxy[3] must be within threshold pixels of each other
-          List<int> xyxy1 = frame['ann'][0]['xyxy'];
-          List<int> xyxy2 = frame['ann'][1]['xyxy'];
+          List<int> xyxy1 = (frame['ann'][0]['xyxy'] as List).cast<int>();
+          List<int> xyxy2 = (frame['ann'][1]['xyxy'] as List).cast<int>();
           bool close =
               (((xyxy1[0] - xyxy2[0]).abs() <= threshold) && ((xyxy1[2] - xyxy2[2]).abs() <= threshold)) ||
               (((xyxy1[1] - xyxy2[1]).abs() <= threshold) && ((xyxy1[3] - xyxy2[3]).abs() <= threshold));

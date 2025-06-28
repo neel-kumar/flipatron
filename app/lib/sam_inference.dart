@@ -92,6 +92,13 @@ class SamInference {
 
     var postTime = DateTime.now().millisecondsSinceEpoch - postStart;
 
+
+/*
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/${DateTime.now().millisecondsSinceEpoch}.json');
+    await tempFile.writeAsString(jsonEncode(ann));
+*/
+
     return {
       "ann": ann,
       "stats": {"pre": preProcessElapsedTime, "inf": inferenceTimeElapsed, "post": postTime},

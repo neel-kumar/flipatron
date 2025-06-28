@@ -1,8 +1,13 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:opencv_dart/opencv_dart.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -12,13 +17,61 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart'; // For MethodChannel
 import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:video_player/video_player.dart';
 
 import 'maskinator.dart';
 import 'scanner_utils.dart';
 
-void main() {
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+
+  service.on('run').listen((event) async {
+    print('background started');
+    final List<String> framePaths = (event!['frames'] as List).cast<String>();
+    final frames = framePaths.map((path) => File(path)).toList();
+    
+    Maskinator fastSam = Maskinator();
+    List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames);
+
+    final tempDir = await getTemporaryDirectory();
+    final tempFile = File('${tempDir.path}/result.json');
+    await tempFile.writeAsString(jsonEncode(modelOut));
+
+    print('background ended');
+    service.invoke('update', {'result_path': tempFile.path});
+  });
+
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+}
+
+Future<void> initializeService() async {
+  DartPluginRegistrant.ensureInitialized();
+  final service = FlutterBackgroundService();
+
+  // 2. Configure the service for Android and iOS.
+  await service.configure(
+    androidConfiguration: AndroidConfiguration(
+      // This will be executed when the service is started.
+      onStart: onStart,
+      // To run in the foreground, we need a notification.
+      isForegroundMode: true,
+      autoStart: false,
+    ),
+    iosConfiguration: IosConfiguration(
+      // This will be executed when the app is in the foreground.
+      onForeground: onStart,
+      autoStart: false,
+    ),
+  );
+}
+
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await initializeService();
   runApp(const MaterialApp(home: MyApp()));
 }
 
@@ -37,6 +90,7 @@ class _MyAppState extends State<MyApp> {
   bool isNotebook = true;
   Uint8List _pdfBytes = Uint8List(0);
   // Store history of extractions: each entry is {log, frames, framesWithMasks, croppedMasks}
+  String? _processingMessage;
   final Map<String, dynamic> _devLog = {'log': '', 'frames': [], 'framesWithMasks': [], 'croppedMasks': []};
   void _appendLog(String msg) {
     setState(() {
@@ -45,6 +99,8 @@ class _MyAppState extends State<MyApp> {
   }
 
   void _restartApp() {
+    final service = FlutterBackgroundService();
+    service.invoke('stop');
     setState(() {
       _videoFile = null;
       _extracting = false;
@@ -66,15 +122,15 @@ class _MyAppState extends State<MyApp> {
       // If the video is from the camera, rotate to horizontal if needed
       File videoFile = File(picked.path);
 
-      setState(() {
-        _devLog['log'] = '';
-        _devLog['frames'] = [];
-        _devLog['framesWithMasks'] = [];
-        _devLog['croppedMasks'] = [];
-        _videoFile = videoFile;
-        _pdfBytes = Uint8List(0);
-      });
-      _appendLog('Selected video: ${videoFile.path}');
+			setState(() {
+					_devLog['log'] = '';
+					_devLog['frames'] = [];
+					_devLog['framesWithMasks'] = [];
+					_devLog['croppedMasks'] = [];
+					_videoFile = videoFile;
+					_pdfBytes = Uint8List(0);
+					});
+			_appendLog('Selected video: ${videoFile.path}');
 
       processVideo();
     }
@@ -82,40 +138,58 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> processVideo() async {
     final List<File> frames = await _extractFramesIso(_videoFile);
+    final framePaths = frames.map((f) => f.path).toList();
+
+		setState(() {
+				_processingMessage = 'You may use other apps while your video is processed';
+				});
+
+    final service = FlutterBackgroundService();
+    service.startService();
+    service.invoke('run', {'frames': framePaths});
 
     var stopwatch = Stopwatch()..start();
 
-    Maskinator fastSam = Maskinator();
-    //await fastSam.init();
-    List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames); // mask data, mask, area, xyxy for each frame
+    service.on('update').listen((event) async {
+      final String resultPath = event!['result_path'];
+      final file = File(resultPath);
+      final result = jsonDecode(await file.readAsString());
+      await file.delete();
 
-    var log = 'Segmented ${frames.length} frames.\n';
-    for (var i = 0; i < modelOut.length; i++) {
-      log += 'Frame ${i + 1}: ${modelOut[i]['stats']}\n';
-    }
+      final modelOut = (result as List).cast<Map<String, dynamic>>();
 
-    List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1, 40);
-    List<Map<String, dynamic>> finalPages = ScannerUtils().finalFrames(filteredOut);
+      var log = 'Segmented ${frames.length} frames.\n';
+      for (var i = 0; i < modelOut.length; i++) {
+        log += 'Frame ${i + 1}: ${modelOut[i]['stats']}\n';
+      }
 
-    for (var i = 0; i < filteredOut.length; i++) {
-      log += 'Frame ${i + 1}: ${filteredOut[i]['ann'].length} pages found, ${finalPages[i]['ann'].length} final doc\n';
-    }
+      List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1, 40);
+      List<Map<String, dynamic>> finalPages = ScannerUtils().finalFrames(filteredOut);
 
-    List<img.Image> framesWithMasks = displayFramesWithMasks(frames, filteredOut);
+      for (var i = 0; i < filteredOut.length; i++) {
+        log += 'Frame ${i + 1}: ${filteredOut[i]['ann'].length} pages found, ${finalPages[i]['ann'].length} final doc\n';
+      }
 
-    // Crop frames to each mask's bounding box
-    List<img.Image> croppedMasks = cropFramesToMasks(frames, finalPages);
+      List<img.Image> framesWithMasks = displayFramesWithMasks(frames, filteredOut);
 
-    stopwatch.stop();
-    log += 'Total scanning time: ${stopwatch.elapsedMilliseconds} ms\n';
+      // Crop frames to each mask's bounding box
+      List<img.Image> croppedMasks = cropFramesToMasks(frames, finalPages);
 
-    final pdfBytes = await createPdfFromImages(croppedMasks);
-    setState(() {
-      _devLog['log'] = '${_devLog['log']}$log';
-      _devLog['framesWithMasks'] = framesWithMasks;
-      _devLog['croppedMasks'] = croppedMasks;
-      _extracting = false;
-      _pdfBytes = pdfBytes;
+      stopwatch.stop();
+      log += 'Total scanning time: ${stopwatch.elapsedMilliseconds} ms\n';
+
+      createPdfFromImages(croppedMasks).then((pdfBytes) {
+        setState(() {
+          _devLog['log'] = '${_devLog['log']}$log';
+          _devLog['framesWithMasks'] = framesWithMasks;
+          _devLog['croppedMasks'] = croppedMasks;
+          _extracting = false;
+          _pdfBytes = pdfBytes;
+          _processingMessage = null;
+        });
+      });
+
+      service.invoke('stop');
     });
   }
 
@@ -130,7 +204,7 @@ class _MyAppState extends State<MyApp> {
       final resized = img.copyResize(decoded, width: 640, height: 640);
       for (var j = 0; j < modelOut[i]['ann'].length; j++) {
         var data = modelOut[i]['ann'][j];
-        final mask = data['mask'] as List<List<bool>>;
+        final mask = (data['mask'] as List).map((dynamic row) => (row as List).cast<bool>()).toList();
         // Coordinates will be used later for drawing the rectangle
         // draw mask in transparent blue on the image
         for (int y = 0; y < resized.height; y++) {
@@ -157,7 +231,7 @@ class _MyAppState extends State<MyApp> {
       }
       for (var j = 0; j < modelOut[i]['ann'].length; j++) {
         var data = modelOut[i]['ann'][j];
-        final xyxy = data['xyxy'] as List<int>;
+        final xyxy = (data['xyxy'] as List).cast<int>();
 
         // Use the same random color for the rectangle as used for the mask
         final random = Random(data.hashCode);
@@ -188,7 +262,7 @@ class _MyAppState extends State<MyApp> {
       // For each annotation/mask in the frame
       for (var j = 0; j < filteredOut[i]['ann'].length; j++) {
         var data = filteredOut[i]['ann'][j];
-        final xyxy = data['xyxy'] as List<int>;
+        final xyxy = (data['xyxy'] as List).cast<int>();
 
         // Calculate the dimensions of the cropped image
         int x1 = xyxy[0];
@@ -734,6 +808,15 @@ class _MyAppState extends State<MyApp> {
                 const Padding(
                   padding: EdgeInsets.all(6.0),
                   child: LinearProgressIndicator(color: Color(0xFF4F8CFF), backgroundColor: Color(0xFF222B3A)),
+                ),
+              if (_processingMessage != null)
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  child: Text(
+                    _processingMessage!,
+                    style: const TextStyle(color: Color(0xFFB3C6FF), fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               const SizedBox(height: 16), // Show extraction history
               if (_devLog['frames'] != null && (_devLog['frames'] as List).isNotEmpty)
