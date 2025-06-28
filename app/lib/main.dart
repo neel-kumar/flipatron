@@ -417,544 +417,551 @@ class _MyAppState extends State<MyApp> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(20.0),
-          child: Column(
+          child: Stack(
             children: [
-              // Toggle button between notebook and pages
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: !isNotebook ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'Pages',
-                        style: TextStyle(
-                          color: !isNotebook ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
-                          fontSize: 16,
-                          fontWeight: !isNotebook ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    GestureDetector(
-                      onTap: _extracting
-                          ? null
-                          : () {
-                              setState(() {
-                                isNotebook = !isNotebook;
-                                // Add animation effect for the page-to-book transition
-                                if (isNotebook) {
-                                  // Animating to notebook mode
-                                  Future.delayed(Duration(milliseconds: 100), () {
-                                    setState(() {}); // Trigger rebuild for animation
-                                  });
-                                } else {
-                                  // Animating to page mode
-                                  Future.delayed(Duration(milliseconds: 100), () {
-                                    setState(() {}); // Trigger rebuild for animation
-                                  });
-                                }
-                              });
-                            },
-                      child: Opacity(
-                        opacity: _extracting ? 0.5 : 1.0,
-                        child: Container(
-                          width: 160,
-                          height: 80,
-                          padding: const EdgeInsets.all(8),
+              Column(
+                children: [
+                  // Toggle button between notebook and pages
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF1A2233), Color(0xFF2D3546)],
-                              begin: Alignment.bottomLeft,
-                              end: Alignment.topRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
-                            ],
+                            color: !isNotebook ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          child: AnimatedAlign(
-                            duration: const Duration(milliseconds: 250),
-                            alignment: isNotebook ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              width: 80,
-                              height: 64,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF4F8CFF), Color(0xFF3A70E0)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(16),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFF3A70E0).withOpacity(0.4),
-                                    blurRadius: 6,
-                                    offset: const Offset(0, 2),
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Stack(
-                                  alignment: Alignment.center,
-                                  children: [
-                                    // Notebook icon
-                                    Transform(
-                                      alignment: Alignment.center,
-                                      transform: Matrix4.identity()
-                                        ..setEntry(3, 2, 0.001)
-                                        ..rotateY(isNotebook ? 0 : 3.14159),
-                                      child: Opacity(
-                                        opacity: isNotebook ? 1.0 : 0.0,
-                                        child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 32),
-                                      ),
-                                    ),
-                                    // Page icon with animation
-                                    Transform(
-                                      alignment: Alignment.center,
-                                      transform: Matrix4.identity()
-                                        ..setEntry(3, 2, 0.001)
-                                        ..rotateY(isNotebook ? 3.14159 : 0),
-                                      child: Opacity(
-                                        opacity: isNotebook ? 0.0 : 1.0,
-                                        child: const Icon(Icons.insert_drive_file_outlined, color: Colors.white, size: 32),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: isNotebook ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'Notebook',
-                        style: TextStyle(
-                          color: isNotebook ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
-                          fontSize: 16,
-                          fontWeight: isNotebook ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // Developer mode toggle
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: devMode ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        'Developer Mode',
-                        style: TextStyle(
-                          color: devMode ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
-                          fontSize: 14,
-                          fontWeight: devMode ? FontWeight.w700 : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 20),
-                    GestureDetector(
-                      onTap: _extracting
-                          ? null
-                          : () {
-                              setState(() {
-                                devMode = !devMode;
-                              });
-                            },
-                      child: Opacity(
-                        opacity: _extracting ? 0.5 : 1.0,
-                        child: Container(
-                          width: 120,
-                          height: 50,
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(16),
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFF1A2233), Color(0xFF2D3546)],
-                              begin: Alignment.bottomLeft,
-                              end: Alignment.topRight,
-                            ),
-                            boxShadow: [
-                              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 6, offset: const Offset(0, 2)),
-                            ],
-                          ),
-                          child: AnimatedAlign(
-                            duration: const Duration(milliseconds: 250),
-                            alignment: devMode ? Alignment.centerRight : Alignment.centerLeft,
-                            child: Container(
-                              width: 50,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF4F8CFF), Color(0xFF3A70E0)],
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(0xFF3A70E0).withOpacity(0.4),
-                                    blurRadius: 4,
-                                    offset: const Offset(0, 1),
-                                  ),
-                                ],
-                              ),
-                              child: Center(
-                                child: Icon(devMode ? Icons.code : Icons.cancel_rounded, color: Colors.white, size: 20),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              // FPS slider
-              if (devMode)
-                Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          const Text(
-                            'FPS:',
+                          child: Text(
+                            'Pages',
                             style: TextStyle(
-                              color: Color(0xFFB3C6FF), // light blue for OLED
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
+                              color: !isNotebook ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
+                              fontSize: 16,
+                              fontWeight: !isNotebook ? FontWeight.w700 : FontWeight.w500,
                             ),
                           ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Slider(
-                              value: _frameRate,
-                              min: 1.0,
-                              max: 30.0,
-                              divisions: 29,
-                              label: _frameRate.round().toString(),
-                              onChanged: _extracting
-                                  ? null
-                                  : (val) {
-                                      setState(() {
-                                        _frameRate = val.roundToDouble();
+                        ),
+                        const SizedBox(width: 20),
+                        GestureDetector(
+                          onTap: _extracting
+                              ? null
+                              : () {
+                                  setState(() {
+                                    isNotebook = !isNotebook;
+                                    // Add animation effect for the page-to-book transition
+                                    if (isNotebook) {
+                                      // Animating to notebook mode
+                                      Future.delayed(const Duration(milliseconds: 100), () {
+                                        setState(() {}); // Trigger rebuild for animation
                                       });
-                                    },
-                              activeColor: _extracting ? Color(0xFF222B3A) : Color(0xFF4F8CFF),
-                              inactiveColor: Color(0xFF222B3A),
-                              thumbColor: _extracting ? Color(0xFF666666) : Colors.white,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(color: Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
-                            child: Text(
-                              _frameRate.round().toString(),
-                              style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                height: 70,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: _extracting
-                        ? const LinearGradient(
-                            colors: [Color(0xFFFF4F4F), Color(0xFF331A1A)],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          )
-                        : const LinearGradient(
-                            colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                          ),
-                    borderRadius: BorderRadius.circular(18),
-                  ),
-                  child: ElevatedButton.icon(
-                    icon: _extracting
-                        ? const Icon(Icons.cancel_rounded, size: 36, color: Colors.white)
-                        : const Icon(Icons.scanner_rounded, size: 36, color: Colors.white),
-                    label: Text(
-                      _extracting ? 'Cancel' : 'Select Video',
-                      style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    onPressed: _extracting
-                        ? () {
-                            _restartApp();
-                          }
-                        : () async {
-                            showModalBottomSheet(
-                              context: context,
-                              backgroundColor: const Color(0xFF10131A),
-                              shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-                              builder: (context) {
-                                return Padding(
-                                  padding: const EdgeInsets.all(24.0),
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 60,
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            gradient: const LinearGradient(
-                                              colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
-                                              begin: Alignment.centerLeft,
-                                              end: Alignment.centerRight,
-                                            ),
-                                            borderRadius: BorderRadius.circular(14),
-                                          ),
-                                          child: ElevatedButton.icon(
-                                            icon: const Icon(Icons.videocam_rounded, size: 28, color: Colors.white),
-                                            label: const Text(
-                                              'Record Video',
-                                              style: TextStyle(fontSize: 22, color: Colors.white),
-                                            ),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.transparent,
-                                              shadowColor: Colors.transparent,
-                                              foregroundColor: Colors.white,
-                                              elevation: 0,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                            ),
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                              _pickVideo(ImageSource.camera);
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 16),
-                                      SizedBox(
-                                        width: double.infinity,
-                                        height: 60,
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            gradient: const LinearGradient(
-                                              colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
-                                              begin: Alignment.centerLeft,
-                                              end: Alignment.centerRight,
-                                            ),
-                                            borderRadius: BorderRadius.circular(14),
-                                          ),
-                                          child: ElevatedButton.icon(
-                                            icon: const Icon(Icons.video_file_rounded, size: 28, color: Colors.white),
-                                            label: const Text(
-                                              'Pick from Gallery',
-                                              style: TextStyle(fontSize: 22, color: Colors.white),
-                                            ),
-                                            style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.transparent,
-                                              shadowColor: Colors.transparent,
-                                              foregroundColor: Colors.white,
-                                              elevation: 0,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                                            ),
-                                            onPressed: () {
-                                              Navigator.pop(context);
-                                              _pickVideo(ImageSource.gallery);
-                                            },
-                                          ),
-                                        ),
+                                    } else {
+                                      // Animating to page mode
+                                      Future.delayed(const Duration(milliseconds: 100), () {
+                                        setState(() {}); // Trigger rebuild for animation
+                                      });
+                                    }
+                                  });
+                                },
+                          child: Opacity(
+                            opacity: _extracting ? 0.5 : 1.0,
+                            child: Container(
+                              width: 160,
+                              height: 80,
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(20),
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF1A2233), Color(0xFF2D3546)],
+                                  begin: Alignment.bottomLeft,
+                                  end: Alignment.topRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
+                                ],
+                              ),
+                              child: AnimatedAlign(
+                                duration: const Duration(milliseconds: 250),
+                                alignment: isNotebook ? Alignment.centerRight : Alignment.centerLeft,
+                                child: Container(
+                                  width: 80,
+                                  height: 64,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF4F8CFF), Color(0xFF3A70E0)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(16),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF3A70E0).withOpacity(0.4),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
                                       ),
                                     ],
                                   ),
-                                );
-                              },
-                            );
-                          },
-                  ),
-                ),
-              ),
-              if (_extracting)
-                const Padding(
-                  padding: EdgeInsets.all(6.0),
-                  child: LinearProgressIndicator(color: Color(0xFF4F8CFF), backgroundColor: Color(0xFF222B3A)),
-                ),
-              if (_processingMessage != null)
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    _processingMessage!,
-                    style: const TextStyle(color: Color(0xFFB3C6FF), fontSize: 16),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              const SizedBox(height: 16), // Show extraction history
-              if (_devLog['frames'] != null && (_devLog['frames'] as List).isNotEmpty)
-                Expanded(
-                  child: ListView(
-                    children: [
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 24),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF10131A),
-                          borderRadius: BorderRadius.circular(18),
-                          boxShadow: [
-                            BoxShadow(color: Colors.blueGrey.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (devMode && (_devLog['log'] as String).isNotEmpty)
-                              Text(
-                                _devLog['log'],
-                                style: const TextStyle(fontFamily: 'monospace', color: Color(0xFFB3C6FF), fontSize: 13),
+                                  child: Center(
+                                    child: Stack(
+                                      alignment: Alignment.center,
+                                      children: [
+                                        // Notebook icon
+                                        Transform(
+                                          alignment: Alignment.center,
+                                          transform: Matrix4.identity()
+                                            ..setEntry(3, 2, 0.001)
+                                            ..rotateY(isNotebook ? 0 : 3.14159),
+                                          child: Opacity(
+                                            opacity: isNotebook ? 1.0 : 0.0,
+                                            child: const Icon(Icons.menu_book_rounded, color: Colors.white, size: 32),
+                                          ),
+                                        ),
+                                        // Page icon with animation
+                                        Transform(
+                                          alignment: Alignment.center,
+                                          transform: Matrix4.identity()
+                                            ..setEntry(3, 2, 0.001)
+                                            ..rotateY(isNotebook ? 3.14159 : 0),
+                                          child: Opacity(
+                                            opacity: isNotebook ? 0.0 : 1.0,
+                                            child: const Icon(Icons.insert_drive_file_outlined, color: Colors.white, size: 32),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
-                            if ((_devLog['frames'] as List).isNotEmpty)
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  if (devMode)
-                                    const Text(
-                                      "Original Frames:",
-                                      style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
-                                    ),
-                                  if (devMode)
-                                    SizedBox(
-                                      height: 180,
-                                      child: ListView.builder(
-                                        scrollDirection: Axis.horizontal,
-                                        itemCount: (_devLog['frames'] as List).length,
-                                        itemBuilder: (context, fidx) {
-                                          final frames = _devLog['frames'] as List<File>;
-                                          return Padding(
-                                            padding: const EdgeInsets.all(8.0),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(6),
-                                              child: Image.file(frames[fidx]),
-                                            ),
-                                          );
-                                        },
-                                      ),
-                                    ), // Display frames with masks
-                                  if (devMode && (_devLog['framesWithMasks'] as List).isNotEmpty)
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(vertical: 12.0),
-                                          child: Text(
-                                            "Frames with Masks:",
-                                            style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                        for (var i in _devLog['framesWithMasks'] as List<img.Image>)
-                                          Padding(
-                                            padding: const EdgeInsets.only(bottom: 16.0),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(16),
-                                              child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  // Display cropped masks
-                                  if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
-                                    Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Padding(
-                                          padding: EdgeInsets.symmetric(vertical: 12.0),
-                                          child: Text(
-                                            "Scan Sucessful!",
-                                            style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
-                                          ),
-                                        ),
-                                        for (var i in _devLog['croppedMasks'] as List<img.Image>)
-                                          Padding(
-                                            padding: const EdgeInsets.only(bottom: 16.0),
-                                            child: ClipRRect(
-                                              borderRadius: BorderRadius.circular(16),
-                                              child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isNotebook ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Notebook',
+                            style: TextStyle(
+                              color: isNotebook ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
+                              fontSize: 16,
+                              fontWeight: isNotebook ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Developer mode toggle
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: devMode ? const Color(0xFF4F8CFF).withOpacity(0.15) : Colors.transparent,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Developer Mode',
+                            style: TextStyle(
+                              color: devMode ? const Color(0xFFB3C6FF) : const Color(0xFFB3C6FF).withOpacity(0.6),
+                              fontSize: 14,
+                              fontWeight: devMode ? FontWeight.w700 : FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        GestureDetector(
+                          onTap: _extracting
+                              ? null
+                              : () {
+                                  setState(() {
+                                    devMode = !devMode;
+                                  });
+                                },
+                          child: Opacity(
+                            opacity: _extracting ? 0.5 : 1.0,
+                            child: Container(
+                              width: 120,
+                              height: 50,
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(16),
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF1A2233), Color(0xFF2D3546)],
+                                  begin: Alignment.bottomLeft,
+                                  end: Alignment.topRight,
+                                ),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 6, offset: const Offset(0, 2)),
                                 ],
                               ),
-                          ],
+                              child: AnimatedAlign(
+                                duration: const Duration(milliseconds: 250),
+                                alignment: devMode ? Alignment.centerRight : Alignment.centerLeft,
+                                child: Container(
+                                  width: 50,
+                                  height: 38,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [Color(0xFF4F8CFF), Color(0xFF3A70E0)],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    borderRadius: BorderRadius.circular(12),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFF3A70E0).withOpacity(0.4),
+                                        blurRadius: 4,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Center(
+                                    child: Icon(devMode ? Icons.code : Icons.cancel_rounded, color: Colors.white, size: 20),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              // Save PDF button locked to bottom
-              if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16.0),
-                  child: SizedBox(
+                  // FPS slider
+                  if (devMode)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const Text(
+                                'FPS:',
+                                style: TextStyle(
+                                  color: Color(0xFFB3C6FF), // light blue for OLED
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Slider(
+                                  value: _frameRate,
+                                  min: 1.0,
+                                  max: 30.0,
+                                  divisions: 29,
+                                  label: _frameRate.round().toString(),
+                                  onChanged: _extracting
+                                      ? null
+                                      : (val) {
+                                          setState(() {
+                                            _frameRate = val.roundToDouble();
+                                          });
+                                        },
+                                  activeColor: _extracting ? const Color(0xFF222B3A) : const Color(0xFF4F8CFF),
+                                  inactiveColor: const Color(0xFF222B3A),
+                                  thumbColor: _extracting ? const Color(0xFF666666) : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                                child: Text(
+                                  _frameRate.round().toString(),
+                                  style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 20),
+                  SizedBox(
                     width: double.infinity,
-                    height: 60,
+                    height: 70,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
-                          begin: Alignment.centerLeft,
-                          end: Alignment.centerRight,
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(color: const Color(0xFF4CAF50).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
-                        ],
+                        gradient: _extracting
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFF4F4F), Color(0xFF331A1A)],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              )
+                            : const LinearGradient(
+                                colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                              ),
+                        borderRadius: BorderRadius.circular(18),
                       ),
                       child: ElevatedButton.icon(
-                        icon: const Icon(Icons.picture_as_pdf, size: 28, color: Colors.white),
-                        label: const Text(
-                          'Save PDF',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                        icon: _extracting
+                            ? const Icon(Icons.cancel_rounded, size: 36, color: Colors.white)
+                            : const Icon(Icons.scanner_rounded, size: 36, color: Colors.white),
+                        label: Text(
+                          _extracting ? 'Cancel' : 'Select Video',
+                          style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.transparent,
                           shadowColor: Colors.transparent,
                           foregroundColor: Colors.white,
                           elevation: 0,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                          padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                        onPressed: () async {
-                          final croppedMasks = _devLog['croppedMasks'] as List<img.Image>;
-                          savePdf(croppedMasks);
-                        },
+                        onPressed: _extracting
+                            ? () {
+                                _restartApp();
+                              }
+                            : () async {
+                                showModalBottomSheet(
+                                  context: context,
+                                  backgroundColor: const Color(0xFF10131A),
+                                  shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                                  builder: (context) {
+                                    return Padding(
+                                      padding: const EdgeInsets.all(24.0),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          SizedBox(
+                                            width: double.infinity,
+                                            height: 60,
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                gradient: const LinearGradient(
+                                                  colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
+                                                  begin: Alignment.centerLeft,
+                                                  end: Alignment.centerRight,
+                                                ),
+                                                borderRadius: BorderRadius.circular(14),
+                                              ),
+                                              child: ElevatedButton.icon(
+                                                icon: const Icon(Icons.videocam_rounded, size: 28, color: Colors.white),
+                                                label: const Text(
+                                                  'Record Video',
+                                                  style: TextStyle(fontSize: 22, color: Colors.white),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.transparent,
+                                                  shadowColor: Colors.transparent,
+                                                  foregroundColor: Colors.white,
+                                                  elevation: 0,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                                ),
+                                                onPressed: () {
+                                                  Navigator.pop(context);
+                                                  _pickVideo(ImageSource.camera);
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 16),
+                                          SizedBox(
+                                            width: double.infinity,
+                                            height: 60,
+                                            child: DecoratedBox(
+                                              decoration: BoxDecoration(
+                                                gradient: const LinearGradient(
+                                                  colors: [Color(0xFF4F8CFF), Color(0xFF1A2233)],
+                                                  begin: Alignment.centerLeft,
+                                                  end: Alignment.centerRight,
+                                                ),
+                                                borderRadius: BorderRadius.circular(14),
+                                              ),
+                                              child: ElevatedButton.icon(
+                                                icon: const Icon(Icons.video_file_rounded, size: 28, color: Colors.white),
+                                                label: const Text(
+                                                  'Pick from Gallery',
+                                                  style: TextStyle(fontSize: 22, color: Colors.white),
+                                                ),
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: Colors.transparent,
+                                                  shadowColor: Colors.transparent,
+                                                  foregroundColor: Colors.white,
+                                                  elevation: 0,
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                                ),
+                                                onPressed: () {
+                                                  Navigator.pop(context);
+                                                  _pickVideo(ImageSource.gallery);
+                                                },
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                      ),
+                    ),
+                  ),
+                  if (_extracting)
+                    const Padding(
+                      padding: EdgeInsets.all(6.0),
+                      child: LinearProgressIndicator(color: Color(0xFF4F8CFF), backgroundColor: Color(0xFF222B3A)),
+                    ),
+                  if (_processingMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Text(
+                        _processingMessage!,
+                        style: const TextStyle(color: Color(0xFFB3C6FF), fontSize: 16),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  const SizedBox(height: 16), // Show extraction history
+                  if (_devLog['frames'] != null && (_devLog['frames'] as List).isNotEmpty)
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(bottom: 24),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF10131A),
+                              borderRadius: BorderRadius.circular(18),
+                              boxShadow: [
+                                BoxShadow(color: Colors.blueGrey.withOpacity(0.08), blurRadius: 12, offset: const Offset(0, 4)),
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (devMode && (_devLog['log'] as String).isNotEmpty)
+                                  Text(
+                                    _devLog['log'],
+                                    style: const TextStyle(fontFamily: 'monospace', color: Color(0xFFB3C6FF), fontSize: 13),
+                                  ),
+                                if ((_devLog['frames'] as List).isNotEmpty)
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (devMode)
+                                        const Text(
+                                          "Original Frames:",
+                                          style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                        ),
+                                      if (devMode)
+                                        SizedBox(
+                                          height: 180,
+                                          child: ListView.builder(
+                                            scrollDirection: Axis.horizontal,
+                                            itemCount: (_devLog['frames'] as List).length,
+                                            itemBuilder: (context, fidx) {
+                                              final frames = _devLog['frames'] as List<File>;
+                                              return Padding(
+                                                padding: const EdgeInsets.all(8.0),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(6),
+                                                  child: Image.file(frames[fidx]),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ), // Display frames with masks
+                                      if (devMode && (_devLog['framesWithMasks'] as List).isNotEmpty)
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(vertical: 12.0),
+                                              child: Text(
+                                                "Frames with Masks:",
+                                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                              ),
+                                            ),
+                                            for (var i in _devLog['framesWithMasks'] as List<img.Image>)
+                                              Padding(
+                                                padding: const EdgeInsets.only(bottom: 16.0),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(16),
+                                                  child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      // Display cropped masks
+                                      if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
+                                        Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Padding(
+                                              padding: EdgeInsets.symmetric(vertical: 12.0),
+                                              child: Text(
+                                                "Scan Sucessful!",
+                                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 16, fontWeight: FontWeight.bold),
+                                              ),
+                                            ),
+                                            for (var i in _devLog['croppedMasks'] as List<img.Image>)
+                                              Padding(
+                                                padding: const EdgeInsets.only(bottom: 16.0),
+                                                child: ClipRRect(
+                                                  borderRadius: BorderRadius.circular(16),
+                                                  child: Image.memory(img.encodeJpg(i), fit: BoxFit.cover),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                    ],
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+              // Save PDF button locked to bottom
+              if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 10.0, left: 10.0, right: 10.0),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: 60,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(color: const Color(0xFF4CAF50).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
+                          ],
+                        ),
+                        child: ElevatedButton.icon(
+                          icon: const Icon(Icons.picture_as_pdf, size: 28, color: Colors.white),
+                          label: const Text(
+                            'Save PDF',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.transparent,
+                            shadowColor: Colors.transparent,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          onPressed: () async {
+                            final croppedMasks = _devLog['croppedMasks'] as List<img.Image>;
+                            savePdf(croppedMasks);
+                          },
+                        ),
                       ),
                     ),
                   ),
