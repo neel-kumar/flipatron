@@ -25,19 +25,25 @@ void onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
 
   service.on('run').listen((event) async {
-    print('background started');
-    final List<String> framePaths = (event!['frames'] as List).cast<String>();
-    final frames = framePaths.map((path) => File(path)).toList();
+    try {
+      print('SERVICE background started');
+      final List<String> framePaths = (event!['frames'] as List).cast<String>();
+      final frames = framePaths.map((path) => File(path)).toList();
+      print('SERVICE frames extracted from paths');
 
-    Maskinator fastSam = Maskinator();
-    List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames);
+      Maskinator fastSam = Maskinator();
+      List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames);
 
-    final tempDir = await getTemporaryDirectory();
-    final tempFile = File('${tempDir.path}/result.json');
-    await tempFile.writeAsString(jsonEncode(modelOut));
+      final tempDir = await getTemporaryDirectory();
+      final tempFile = File('${tempDir.path}/result.json');
+      await tempFile.writeAsString(jsonEncode(modelOut));
 
-    print('background ended');
-    service.invoke('update', {'result_path': tempFile.path});
+      print('SERVICE background ended');
+      service.invoke('update', {'result_path': tempFile.path});
+    } catch (e) {
+      service.invoke('error', {'error': e.toString()});
+      service.stopSelf();
+    }
   });
 
   service.on('stopService').listen((event) {
@@ -114,6 +120,7 @@ class _MyAppState extends State<MyApp> {
       _devLog['framesWithMasks'] = [];
       _devLog['croppedMasks'] = [];
       _pdfBytes = Uint8List(0);
+      _processingMessage = '';
     });
   }
 
@@ -145,7 +152,7 @@ class _MyAppState extends State<MyApp> {
     final framePaths = frames.map((f) => f.path).toList();
 
     setState(() {
-      _processingMessage = 'Use other apps while your video is processed';
+      _processingMessage = 'No need to stick around!';
     });
 
     final service = FlutterBackgroundService();
@@ -191,6 +198,23 @@ class _MyAppState extends State<MyApp> {
       });
 
       service.invoke('stop');
+    });
+
+    service.on('error').listen((event) {
+      _restartApp();
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Error'),
+          content: Text(event!['error']),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     });
   }
 
