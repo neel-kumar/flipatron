@@ -16,6 +16,8 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:flutter/services.dart'; // For MethodChannel
 import 'package:open_file/open_file.dart';
 import 'package:video_player/video_player.dart';
+//import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import 'maskinator.dart';
 import 'scanner_utils.dart';
@@ -27,19 +29,43 @@ void onStart(ServiceInstance service) async {
   service.on('run').listen((event) async {
     try {
       print('SERVICE background started');
+      final bool isNotebook = (event!['isNotebook'] as bool);
       final List<String> framePaths = (event!['frames'] as List).cast<String>();
       final frames = framePaths.map((path) => File(path)).toList();
       print('SERVICE frames extracted from paths');
 
       Maskinator fastSam = Maskinator();
       List<Map<String, dynamic>> modelOut = await fastSam.runBatchIso(frames);
+      print('finished runBatchIso');
+
+      // Filtering and final frame selection inside background process
+      List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1, 40);
+      List<Map<String, dynamic>> finalPages = ScannerUtils().finalFrames(filteredOut);
+
+      // Only keep bounding boxes for cropping in the main process
+      List<Map<String, dynamic>> filteredOutBboxes = filteredOut
+          .map(
+            (frame) => {
+              'ann': (frame['ann'] as List).map((ann) => {'xyxy': ann['xyxy']}).toList(),
+            },
+          )
+          .toList();
+      List<Map<String, dynamic>> finalPagesBboxes = finalPages
+          .map(
+            (frame) => {
+              'ann': (frame['ann'] as List).map((ann) => {'xyxy': ann['xyxy']}).toList(),
+            },
+          )
+          .toList();
 
       final tempDir = await getTemporaryDirectory();
+      print('Temporary dir for background servicee $tempDir');
       final tempFile = File('${tempDir.path}/result.json');
-      await tempFile.writeAsString(jsonEncode(modelOut));
+      await tempFile.writeAsString(jsonEncode({'filteredOut': filteredOutBboxes, 'finalPages': finalPagesBboxes}));
 
       print('SERVICE background ended');
       service.invoke('update', {'result_path': tempFile.path});
+      service.stopSelf();
     } catch (e) {
       service.invoke('error', {'error': e.toString()});
       service.stopSelf();
@@ -47,6 +73,7 @@ void onStart(ServiceInstance service) async {
   });
 
   service.on('stopService').listen((event) {
+    print('SERVICE stopped');
     service.stopSelf();
   });
 }
@@ -72,9 +99,30 @@ Future<void> initializeService() async {
   );
 }
 
+Future<void> requestNotificationPermission() async {
+  PermissionStatus status = await Permission.notification.status;
+
+  if (status.isDenied) {
+    // Permission is denied, request it
+    status = await Permission.notification.request();
+  }
+
+  if (status.isGranted) {
+    // Permission granted, proceed with notifications
+    print('Notification permission granted');
+  } else if (status.isPermanentlyDenied) {
+    // Permission permanently denied, open app settings
+    openAppSettings();
+  } else {
+    // Permission denied or unknown, handle accordingly
+    print('Notification permission status: $status');
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeService();
+  requestNotificationPermission();
   runApp(const MaterialApp(home: MyApp()));
 }
 
@@ -101,21 +149,20 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  static Future<List<dynamic>> _loadAndDecodeJson(String resultPath) async {
+  static Future<dynamic> _loadAndDecodeJson(String resultPath) async {
     final file = File(resultPath);
-    final result = jsonDecode(await file.readAsString()) as List<dynamic>;
+    final result = jsonDecode(await file.readAsString());
     await file.delete();
     return result;
   }
 
   void _restartApp() {
     final service = FlutterBackgroundService();
-    service.invoke('stop');
+    service.invoke('stopService');
     setState(() {
       _videoFile = null;
       _extracting = false;
       _devLog['log'] = '';
-      _devLog['frames'] = [];
       _devLog['frames'] = [];
       _devLog['framesWithMasks'] = [];
       _devLog['croppedMasks'] = [];
@@ -125,7 +172,6 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _pickVideo(ImageSource source) async {
-    setState(() => _extracting = true);
     final picker = ImagePicker();
 
     final picked = await picker.pickVideo(source: source);
@@ -148,6 +194,9 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> processVideo() async {
+    print('IN processVideo');
+
+    setState(() => _extracting = true);
     final List<File> frames = await _extractFramesIso(_videoFile);
     final framePaths = frames.map((f) => f.path).toList();
 
@@ -155,40 +204,44 @@ class _MyAppState extends State<MyApp> {
       _processingMessage = 'No need to stick around!';
     });
 
+    // Check if the background service is already running
     final service = FlutterBackgroundService();
-    service.startService();
-    service.invoke('run', {'frames': framePaths});
+    final isRunning = await service.isRunning();
+    print('IS RUNNING: ${isRunning ? 'running' : 'stopped'}');
+    if(isRunning) service.invoke("stopService");
+    final isRunning2 = await service.isRunning();
+    print('IS RUNNING: ${isRunning2 ? 'running' : 'stopped'}');
+    await service.startService();
+    final isRunning3 = await service.isRunning();
+    print('IS RUNNING: ${isRunning3 ? 'running' : 'stopped'}');
+    service.invoke('run', {'frames': framePaths, 'isNotebook': isNotebook});
+    print('after invoke run');
 
     var stopwatch = Stopwatch()..start();
 
     service.on('update').listen((event) async {
+      print('SERVICE update recieved');
       final String resultPath = event!['result_path'];
       final result = await compute(_loadAndDecodeJson, resultPath);
-      final modelOut = (result as List).cast<Map<String, dynamic>>();
+      final filteredOut = (result['filteredOut'] as List).cast<Map<String, dynamic>>();
+      final finalPages = (result['finalPages'] as List).cast<Map<String, dynamic>>();
 
       var log = 'Segmented ${frames.length} frames.\n';
-      for (var i = 0; i < modelOut.length; i++) {
-        log += 'Frame ${i + 1}: ${modelOut[i]['stats']}\n';
-      }
-
-      List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1, 40);
-      List<Map<String, dynamic>> finalPages = ScannerUtils().finalFrames(filteredOut);
-
       for (var i = 0; i < filteredOut.length; i++) {
         log += 'Frame ${i + 1}: ${filteredOut[i]['ann'].length} pages found, ${finalPages[i]['ann'].length} final doc\n';
       }
 
-      List<img.Image> framesWithMasks = displayFramesWithMasks(frames, filteredOut);
-
       // Crop frames to each mask's bounding box
       List<img.Image> croppedMasks = cropFramesToMasks(frames, finalPages);
+      // Display frames with bounding boxes only
+      List<img.Image> framesWithMasks = displayFramesWithMasks(frames, filteredOut);
 
       stopwatch.stop();
       log += 'Total scanning time: ${stopwatch.elapsedMilliseconds} ms\n';
 
       createPdfFromImages(croppedMasks).then((pdfBytes) {
         setState(() {
-          _devLog['log'] = '${_devLog['log']}$log';
+          _devLog['log'] = '${_devLog['log']}${log}';
           _devLog['framesWithMasks'] = framesWithMasks;
           _devLog['croppedMasks'] = croppedMasks;
           _extracting = false;
@@ -207,18 +260,13 @@ class _MyAppState extends State<MyApp> {
         builder: (context) => AlertDialog(
           title: const Text('Error'),
           content: Text(event!['error']),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK'))],
         ),
       );
     });
   }
 
-  List<img.Image> displayFramesWithMasks(List<File> frames, List<Map<String, dynamic>> modelOut) {
+  List<img.Image> displayFramesWithMasks(List<File> frames, List<Map<String, dynamic>> bboxOut) {
     List<img.Image> images = [];
 
     for (var i = 0; i < frames.length; i++) {
@@ -227,38 +275,13 @@ class _MyAppState extends State<MyApp> {
       final decoded = img.decodeImage(bytes);
       if (decoded == null) throw FormatException('Decoded image is null');
       final resized = img.copyResize(decoded, width: 640, height: 640);
-      for (var j = 0; j < modelOut[i]['ann'].length; j++) {
-        var data = modelOut[i]['ann'][j];
-        final mask = (data['mask'] as List).map((dynamic row) => (row as List).cast<bool>()).toList();
-        // Coordinates will be used later for drawing the rectangle
-        // draw mask in transparent blue on the image
-        for (int y = 0; y < resized.height; y++) {
-          for (int x = 0; x < resized.width; x++) {
-            if (x >= 0 && x < resized.width && y >= 0 && y < resized.height) {
-              if (mask[y][x]) {
-                final originalColor = resized.getPixel(x, y); // Create a consistent random color per detected object
-                final random = Random(data.hashCode);
-                final r = random.nextInt(256);
-                final g = random.nextInt(256);
-                final b = random.nextInt(256);
 
-                final blendedColor = img.ColorRgba8(
-                  ((originalColor.r as int) * 0.7 + r * 0.3).round(),
-                  ((originalColor.g as int) * 0.7 + g * 0.3).round(),
-                  ((originalColor.b as int) * 0.7 + b * 0.3).round(),
-                  50,
-                );
-                resized.setPixel(x, y, blendedColor);
-              }
-            }
-          }
-        }
-      }
-      for (var j = 0; j < modelOut[i]['ann'].length; j++) {
-        var data = modelOut[i]['ann'][j];
+      // Draw only bounding boxes from bboxOut
+      for (var j = 0; j < bboxOut[i]['ann'].length; j++) {
+        var data = bboxOut[i]['ann'][j];
         final xyxy = (data['xyxy'] as List).cast<int>();
 
-        // Use the same random color for the rectangle as used for the mask
+        // Use a random color for each bounding box
         final random = Random(data.hashCode);
         final r = random.nextInt(256);
         final g = random.nextInt(256);
@@ -281,7 +304,7 @@ class _MyAppState extends State<MyApp> {
   ]) {
     List<img.Image> croppedImages = [];
 
-    for (var i = 0; i < frames.length; i++) {
+    for (var i = 0; i < frames.length && i < filteredOut.length; i++) {
       img.Image frame = img.decodeImage(frames[i].readAsBytesSync())!;
 
       // For each annotation/mask in the frame
@@ -326,9 +349,14 @@ class _MyAppState extends State<MyApp> {
       var stopwatch = Stopwatch()..start();
 
       final dir = await getTemporaryDirectory();
-      final dura = (await getVideoDuration(videoFile)).inMilliseconds;
+      final duration = (await getVideoDuration(videoFile)).inMilliseconds;
 
-      var frames = await compute(_extractFrames, {'videoFile': videoFile, 'frameRate': _frameRate, 'dir': dir, 'duration': dura});
+      var frames = await compute(_extractFrames, {
+        'videoFile': videoFile,
+        'frameRate': _frameRate,
+        'dir': dir,
+        'duration': duration,
+      });
 
       final elapsedMs = stopwatch.elapsedMilliseconds;
       setState(() {
@@ -344,16 +372,13 @@ class _MyAppState extends State<MyApp> {
     File videoFile = data['videoFile'];
     double frameRate = data['frameRate'];
     var dir = data['dir'] as Directory;
-    if (videoFile == null) return [];
 
-    var filename = videoFile.path;
-    final vidCap = VideoCapture.fromFile(filename!);
+    var frames = <File>[];
+
+    final vidCap = VideoCapture.fromFile(videoFile.path);
 
     final duration = data['duration'] as int;
-    final durs = duration / 1000;
     var frame_interval = (vidCap.get(5) / frameRate).round();
-
-    List<File> frames = [];
 
     for (var i = 0; ; i++) {
       var success, frame;
@@ -421,13 +446,7 @@ class _MyAppState extends State<MyApp> {
       final File file = File(filePath);
       await file.writeAsBytes(_pdfBytes);
 
-      await File(filePath).writeAsBytes(_pdfBytes);
-
-      await OpenFile.open(
-        filePath,
-        type: 'application/pdf',
-        //       uti: 'com.adobe.pdf',
-      );
+      await OpenFile.open(filePath, type: 'application/pdf');
       setState(() {
         _devLog['log'] += "PDF saved to: $filePath\n";
       });
@@ -437,18 +456,25 @@ class _MyAppState extends State<MyApp> {
   }
 
   Widget build(BuildContext context) {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light, // Android
+        statusBarBrightness: Brightness.light, // iOS
+      ),
+    );
     return Scaffold(
       backgroundColor: const Color(0xFF000000), // OLED black background
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(20.0),
+          padding: const EdgeInsets.only(bottom: 0.0, left: 5.0, right: 5.0),
           child: Stack(
             children: [
               Column(
                 children: [
                   // Toggle button between notebook and pages
                   Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 16.0),
+                    padding: const EdgeInsets.only(bottom: 16.0),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -477,12 +503,12 @@ class _MyAppState extends State<MyApp> {
                                     // Add animation effect for the page-to-book transition
                                     if (isNotebook) {
                                       // Animating to notebook mode
-                                      Future.delayed(const Duration(milliseconds: 100), () {
+                                      Future.delayed(const Duration(milliseconds: 70), () {
                                         setState(() {}); // Trigger rebuild for animation
                                       });
                                     } else {
                                       // Animating to page mode
-                                      Future.delayed(const Duration(milliseconds: 100), () {
+                                      Future.delayed(const Duration(milliseconds: 70), () {
                                         setState(() {}); // Trigger rebuild for animation
                                       });
                                     }
@@ -627,7 +653,7 @@ class _MyAppState extends State<MyApp> {
                                 ],
                               ),
                               child: AnimatedAlign(
-                                duration: const Duration(milliseconds: 250),
+                                duration: const Duration(milliseconds: 200),
                                 alignment: devMode ? Alignment.centerRight : Alignment.centerLeft,
                                 child: Container(
                                   width: 50,
@@ -665,6 +691,7 @@ class _MyAppState extends State<MyApp> {
                         Expanded(
                           child: Row(
                             children: [
+                              const SizedBox(width: 10),
                               const Text(
                                 'FPS:',
                                 style: TextStyle(
@@ -673,7 +700,6 @@ class _MyAppState extends State<MyApp> {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              const SizedBox(width: 10),
                               Expanded(
                                 child: Slider(
                                   value: _frameRate,
@@ -702,6 +728,7 @@ class _MyAppState extends State<MyApp> {
                                   style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
                                 ),
                               ),
+                              const SizedBox(width: 10),
                             ],
                           ),
                         ),
@@ -959,11 +986,37 @@ class _MyAppState extends State<MyApp> {
                 ],
               ),
               // Save PDF button locked to bottom
-              if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
+              if (!_extracting && (_devLog['croppedMasks'] as List).isEmpty && (_devLog['frames'] as List).isEmpty == false)
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
                     padding: const EdgeInsets.only(bottom: 10.0, left: 10.0, right: 10.0),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 24.0),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFF4F4F), Color(0xFFD32F2F)],
+                          begin: Alignment.centerLeft,
+                          end: Alignment.centerRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(color: const Color(0xFFD32F2F).withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4)),
+                        ],
+                      ),
+                      child: const Text(
+                        'No pages detected, you may have used incorrect settings',
+                        style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                )
+              else if ((_devLog['croppedMasks'] as List?)?.isNotEmpty ?? false)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 5.0, left: 10.0, right: 10.0),
                     child: SizedBox(
                       width: double.infinity,
                       height: 60,

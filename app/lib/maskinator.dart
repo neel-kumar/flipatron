@@ -15,6 +15,16 @@ class Maskinator {
     await samInf.loadModel();
   }
 
+  Future<List<Map<String, dynamic>>> runInference(List<File> images) async {
+    await init();
+    final List<Map<String, dynamic>> results = [];
+    for (var image in images) {
+      final result =  await runModelIsolate(image);
+      results.add(result);
+    }
+    return results;
+  }
+
   Future<List<Map<String, dynamic>>> runBatchIso(List<File> images) async {
     await init();
     return await compute(runBatchInference, {'images': images, 'samInf': samInf});

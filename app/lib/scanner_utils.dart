@@ -14,8 +14,8 @@ class ScannerUtils {
     int frameSize = boolMask.length * boolMask[0].length;
     List<Map<String, dynamic>> filteredMasks = [];
     for (var frame in masks) {
-			final rawa = frame['ann'] as List;
-			List<Map<String, dynamic>> frameAnn = rawa.cast<Map<String, dynamic>>();
+      final rawa = frame['ann'] as List;
+      List<Map<String, dynamic>> frameAnn = rawa.cast<Map<String, dynamic>>();
       List<Map<String, dynamic>> filteredAnn = frameAnn.where((ann) {
         int area = ann['area'];
         int numFalses = area - (ann['marea'] as int);
