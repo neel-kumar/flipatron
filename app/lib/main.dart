@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:opencv_dart/opencv_dart.dart';
@@ -30,7 +31,12 @@ void onStart(ServiceInstance service) async {
     try {
       print('SERVICE background started');
       final bool isNotebook = (event!['isNotebook'] as bool);
-      final List<String> framePaths = (event!['frames'] as List).cast<String>();
+      final _minPer = (event['minper'] as num).toDouble();
+      final _maxPer = (event['maxper'] as num).toDouble();
+      final _fpct = (event['fpct'] as num).toDouble();
+      final _rnge = (event['rnge'] as num).toInt();
+      final _slope = (event['slope'] as num).toDouble();
+      final List<String> framePaths = (event['frames'] as List).cast<String>();
       final frames = framePaths.map((path) => File(path)).toList();
       print('SERVICE frames extracted from paths');
 
@@ -39,7 +45,19 @@ void onStart(ServiceInstance service) async {
       print('finished runBatchIso');
 
       // Filtering and final frame selection inside background process
-      List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1, 40);
+      //List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.20, 0.70, 0.15, 5, 1);
+      List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(
+        modelOut,
+        isNotebook,
+        _minPer,
+        _maxPer,
+        _fpct,
+        _rnge,
+        _slope,
+      );
+      //List<Map<String, dynamic>> filteredOut = ScannerUtils().filterByArea(modelOut, 0.10, 0.70, 0.20);
+      //List<Map<String, dynamic>> filteredOut = modelOut;
+      //List<Map<String, dynamic>> filteredOut = ScannerUtils().filter(modelOut, isNotebook, 0.00, 0.90, 0.50, 10, 0.50);
       List<Map<String, dynamic>> finalPages = ScannerUtils().finalFrames(filteredOut);
 
       // Only keep bounding boxes for cropping in the main process
@@ -60,7 +78,19 @@ void onStart(ServiceInstance service) async {
 
       final tempDir = await getTemporaryDirectory();
       print('Temporary dir for background servicee $tempDir');
-      final tempFile = File('${tempDir.path}/result.json');
+      File tempFile = File('${tempDir.path}/result.json');
+      try {
+        if (await tempFile.exists()) {
+          await tempFile.delete();
+          print('File deleted successfully');
+        } else {
+          print('File does not exist');
+        }
+      } catch (e) {
+        print('Error deleting file $e');
+      }
+      tempFile = File('${tempDir.path}/result.json');
+
       await tempFile.writeAsString(jsonEncode({'filteredOut': filteredOutBboxes, 'finalPages': finalPagesBboxes}));
 
       print('SERVICE background ended');
@@ -122,7 +152,10 @@ Future<void> requestNotificationPermission() async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeService();
-  requestNotificationPermission();
+  //requestNotificationPermission();
+  final service = FlutterBackgroundService();
+  final isRunning = await service.isRunning();
+  if (isRunning) service.invoke("stopService");
   runApp(const MaterialApp(home: MyApp()));
 }
 
@@ -137,12 +170,18 @@ class _MyAppState extends State<MyApp> {
   bool devMode = false; // Toggle for development mode
   File? _videoFile;
   bool _extracting = false;
-  double _frameRate = 3.0;
+  double _frameRate = 2.0;
+  double _minPer = 0.10;
+  double _maxPer = 0.60;
+  double _fpct = 0.20;
+  int _rnge = 5;
+  double _slope = 1.0;
   bool isNotebook = true;
   Uint8List _pdfBytes = Uint8List(0);
   // Store history of extractions: each entry is {log, frames, framesWithMasks, croppedMasks}
-  String? _processingMessage;
-  final Map<String, dynamic> _devLog = {'log': '', 'frames': [], 'framesWithMasks': [], 'croppedMasks': []};
+  String? _processingMessage = '';
+  bool _finishedProcessing = false;
+  final Map<String, dynamic> _devLog = {'log': '', 'frames': [], 'framesimg': [], 'framesWithMasks': [], 'croppedMasks': []};
   void _appendLog(String msg) {
     setState(() {
       _devLog['log'] += "$msg\n";
@@ -152,23 +191,29 @@ class _MyAppState extends State<MyApp> {
   static Future<dynamic> _loadAndDecodeJson(String resultPath) async {
     final file = File(resultPath);
     final result = jsonDecode(await file.readAsString());
-    await file.delete();
+    //await file.delete();
     return result;
+  }
+
+  void _resetState() {
+    setState(() {
+      _extracting = false;
+      _devLog['log'] = '';
+      _devLog['frames'] = [];
+      _devLog['framesWithMasks'] = [];
+      _devLog['framesimg'] = [];
+      _devLog['croppedMasks'] = [];
+      _pdfBytes = Uint8List(0);
+      _processingMessage = '';
+      _finishedProcessing = false;
+    });
   }
 
   void _restartApp() {
     final service = FlutterBackgroundService();
     service.invoke('stopService');
-    setState(() {
-      _videoFile = null;
-      _extracting = false;
-      _devLog['log'] = '';
-      _devLog['frames'] = [];
-      _devLog['framesWithMasks'] = [];
-      _devLog['croppedMasks'] = [];
-      _pdfBytes = Uint8List(0);
-      _processingMessage = '';
-    });
+    _videoFile = null;
+    _resetState();
   }
 
   Future<void> _pickVideo(ImageSource source) async {
@@ -179,13 +224,9 @@ class _MyAppState extends State<MyApp> {
       // If the video is from the camera, rotate to horizontal if needed
       File videoFile = File(picked.path);
 
+      _resetState();
       setState(() {
-        _devLog['log'] = '';
-        _devLog['frames'] = [];
-        _devLog['framesWithMasks'] = [];
-        _devLog['croppedMasks'] = [];
         _videoFile = videoFile;
-        _pdfBytes = Uint8List(0);
       });
       _appendLog('Selected video: ${videoFile.path}');
 
@@ -208,13 +249,21 @@ class _MyAppState extends State<MyApp> {
     final service = FlutterBackgroundService();
     final isRunning = await service.isRunning();
     print('IS RUNNING: ${isRunning ? 'running' : 'stopped'}');
-    if(isRunning) service.invoke("stopService");
+    if (isRunning) service.invoke("stopService");
     final isRunning2 = await service.isRunning();
     print('IS RUNNING: ${isRunning2 ? 'running' : 'stopped'}');
     await service.startService();
     final isRunning3 = await service.isRunning();
     print('IS RUNNING: ${isRunning3 ? 'running' : 'stopped'}');
-    service.invoke('run', {'frames': framePaths, 'isNotebook': isNotebook});
+    service.invoke('run', {
+      'frames': framePaths,
+      'isNotebook': isNotebook,
+      'minper': _minPer,
+      'maxper': _maxPer,
+      'fpct': _fpct,
+      'rnge': _rnge,
+      'slope': _slope,
+    });
     print('after invoke run');
 
     var stopwatch = Stopwatch()..start();
@@ -247,6 +296,7 @@ class _MyAppState extends State<MyApp> {
           _extracting = false;
           _pdfBytes = pdfBytes;
           _processingMessage = null;
+          _finishedProcessing = true;
         });
       });
 
@@ -373,6 +423,13 @@ class _MyAppState extends State<MyApp> {
     double frameRate = data['frameRate'];
     var dir = data['dir'] as Directory;
 
+    // delete all files in dir where file name is frame_(any number).png
+    for (var file in dir.listSync()) {
+      if (file is File && file.path.endsWith('.png') && file.path.startsWith('frame_')) {
+        file.deleteSync();
+      }
+    }
+
     var frames = <File>[];
 
     final vidCap = VideoCapture.fromFile(videoFile.path);
@@ -467,7 +524,7 @@ class _MyAppState extends State<MyApp> {
       backgroundColor: const Color(0xFF000000), // OLED black background
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.only(bottom: 0.0, left: 5.0, right: 5.0),
+          padding: const EdgeInsets.only(bottom: 0.0, left: 10.0, right: 10.0),
           child: Stack(
             children: [
               Column(
@@ -684,8 +741,8 @@ class _MyAppState extends State<MyApp> {
                       ],
                     ),
                   ),
-                  // FPS slider
-                  if (devMode)
+                  // FPS and ScannerUtils sliders
+                  if (devMode) ...[
                     Row(
                       children: [
                         Expanded(
@@ -694,11 +751,7 @@ class _MyAppState extends State<MyApp> {
                               const SizedBox(width: 10),
                               const Text(
                                 'FPS:',
-                                style: TextStyle(
-                                  color: Color(0xFFB3C6FF), // light blue for OLED
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 18, fontWeight: FontWeight.w600),
                               ),
                               Expanded(
                                 child: Slider(
@@ -734,6 +787,232 @@ class _MyAppState extends State<MyApp> {
                         ),
                       ],
                     ),
+                    // minPer slider
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 10),
+                              const Text(
+                                'minPer:',
+                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 18, fontWeight: FontWeight.w600),
+                              ),
+                              Expanded(
+                                child: Slider(
+                                  value: _minPer,
+                                  min: 0.0,
+                                  max: 1.0,
+                                  divisions: 100,
+                                  label: _minPer.toStringAsFixed(2),
+                                  onChanged: _extracting
+                                      ? null
+                                      : (val) {
+                                          setState(() {
+                                            _minPer = double.parse(val.toStringAsFixed(2));
+                                          });
+                                        },
+                                  activeColor: _extracting ? const Color(0xFF222B3A) : const Color(0xFF4F8CFF),
+                                  inactiveColor: const Color(0xFF222B3A),
+                                  thumbColor: _extracting ? const Color(0xFF666666) : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                                child: Text(
+                                  _minPer.toStringAsFixed(2),
+                                  style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // maxPer slider
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 10),
+                              const Text(
+                                'maxPer:',
+                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 18, fontWeight: FontWeight.w600),
+                              ),
+                              Expanded(
+                                child: Slider(
+                                  value: _maxPer,
+                                  min: 0.0,
+                                  max: 1.0,
+                                  divisions: 100,
+                                  label: _maxPer.toStringAsFixed(2),
+                                  onChanged: _extracting
+                                      ? null
+                                      : (val) {
+                                          setState(() {
+                                            _maxPer = double.parse(val.toStringAsFixed(2));
+                                          });
+                                        },
+                                  activeColor: _extracting ? const Color(0xFF222B3A) : const Color(0xFF4F8CFF),
+                                  inactiveColor: const Color(0xFF222B3A),
+                                  thumbColor: _extracting ? const Color(0xFF666666) : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                                child: Text(
+                                  _maxPer.toStringAsFixed(2),
+                                  style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // fpct slider
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 10),
+                              const Text(
+                                'fpct:',
+                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 18, fontWeight: FontWeight.w600),
+                              ),
+                              Expanded(
+                                child: Slider(
+                                  value: _fpct,
+                                  min: 0.0,
+                                  max: 1.0,
+                                  divisions: 100,
+                                  label: _fpct.toStringAsFixed(2),
+                                  onChanged: _extracting
+                                      ? null
+                                      : (val) {
+                                          setState(() {
+                                            _fpct = double.parse(val.toStringAsFixed(2));
+                                          });
+                                        },
+                                  activeColor: _extracting ? const Color(0xFF222B3A) : const Color(0xFF4F8CFF),
+                                  inactiveColor: const Color(0xFF222B3A),
+                                  thumbColor: _extracting ? const Color(0xFF666666) : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                                child: Text(
+                                  _fpct.toStringAsFixed(2),
+                                  style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // rnge slider
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 10),
+                              const Text(
+                                'rnge:',
+                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 18, fontWeight: FontWeight.w600),
+                              ),
+                              Expanded(
+                                child: Slider(
+                                  value: _rnge.toDouble(),
+                                  min: 0.0,
+                                  max: 50.0,
+                                  divisions: 50,
+                                  label: _rnge.toString(),
+                                  onChanged: _extracting
+                                      ? null
+                                      : (val) {
+                                          setState(() {
+                                            _rnge = val.round();
+                                          });
+                                        },
+                                  activeColor: _extracting ? const Color(0xFF222B3A) : const Color(0xFF4F8CFF),
+                                  inactiveColor: const Color(0xFF222B3A),
+                                  thumbColor: _extracting ? const Color(0xFF666666) : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                                child: Text(
+                                  _rnge.toString(),
+                                  style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // slope slider
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Row(
+                            children: [
+                              const SizedBox(width: 10),
+                              const Text(
+                                'slope:',
+                                style: TextStyle(color: Color(0xFFB3C6FF), fontSize: 18, fontWeight: FontWeight.w600),
+                              ),
+                              Expanded(
+                                child: Slider(
+                                  value: _slope,
+                                  min: 0.0,
+                                  max: 3.0,
+                                  divisions: 100,
+                                  label: _slope.toStringAsFixed(2),
+                                  onChanged: _extracting
+                                      ? null
+                                      : (val) {
+                                          setState(() {
+                                            _slope = double.parse(val.toStringAsFixed(2));
+                                          });
+                                        },
+                                  activeColor: _extracting ? const Color(0xFF222B3A) : const Color(0xFF4F8CFF),
+                                  inactiveColor: const Color(0xFF222B3A),
+                                  thumbColor: _extracting ? const Color(0xFF666666) : Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(color: const Color(0xFF1A2233), borderRadius: BorderRadius.circular(8)),
+                                child: Text(
+                                  _slope.toStringAsFixed(2),
+                                  style: const TextStyle(color: Color(0xFF4F8CFF), fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 20),
                   SizedBox(
                     width: double.infinity,
@@ -754,11 +1033,15 @@ class _MyAppState extends State<MyApp> {
                         borderRadius: BorderRadius.circular(18),
                       ),
                       child: ElevatedButton.icon(
-                        icon: _extracting
-                            ? const Icon(Icons.cancel_rounded, size: 36, color: Colors.white)
-                            : const Icon(Icons.scanner_rounded, size: 36, color: Colors.white),
+                        icon: Icon(
+                          (_extracting
+                              ? Icons.cancel_rounded
+                              : (_finishedProcessing ? Icons.refresh_rounded : Icons.scanner_rounded)),
+                          size: 36,
+                          color: Colors.white,
+                        ),
                         label: Text(
-                          _extracting ? 'Cancel' : 'Select Video',
+                          _extracting ? 'Cancel' : (_finishedProcessing ? 'New Scan' : 'Select Video'),
                           style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.white),
                         ),
                         style: ElevatedButton.styleFrom(
@@ -769,7 +1052,7 @@ class _MyAppState extends State<MyApp> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
                           padding: const EdgeInsets.symmetric(vertical: 16),
                         ),
-                        onPressed: _extracting
+                        onPressed: (_extracting || _finishedProcessing)
                             ? () {
                                 _restartApp();
                               }
@@ -985,8 +1268,32 @@ class _MyAppState extends State<MyApp> {
                     ),
                 ],
               ),
+              // Show help button when nothing is processing and no frames/croppedMasks
+              if (!_extracting && (_devLog['frames'] as List).isEmpty && (_devLog['croppedMasks'] as List).isEmpty)
+                Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 20.0),
+                    child: IconButton(
+                      icon: const Icon(Icons.help_outline, size: 40, color: Color(0xFF4F8CFF)),
+                      tooltip: 'Help',
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Tutorial'),
+                            content: Text(
+                              '''1. Select whether to scan individual pages or a notebook\n2. Try developer mode at your own risk(It may cause issues)\n3. Select video from your camera or gallery, Video must be horizontal\n4. Once the "No need to stick around" dialogue appears you may minimize the app (exiting the app will end your scan)\n5. Scanning the video may take seconds to minutes depending on the video size\n6. Go back to the app when the scanning is finished\n7. View and save PDF''',
+                            ),
+                            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                )
               // Save PDF button locked to bottom
-              if (!_extracting && (_devLog['croppedMasks'] as List).isEmpty && (_devLog['frames'] as List).isEmpty == false)
+              else if (!_extracting && (_devLog['croppedMasks'] as List).isEmpty && (_devLog['frames'] as List).isEmpty == false)
                 Align(
                   alignment: Alignment.bottomCenter,
                   child: Padding(
